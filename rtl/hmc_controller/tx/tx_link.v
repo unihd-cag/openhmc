@@ -290,8 +290,11 @@ reg  [FPW-1:0]              data2ram_flit_is_valid;
 reg  [FPW-1:0]              data2ram_flit_is_flow;
 reg                         data2ram_force_tx_retry;
 
-//6 bits addrsize for 4FLIT config, All other configs use 5 bit RAM addr size
-localparam RAM_ADDR_SIZE =  (FPW == 4) ? 6 : 5;
+localparam RAM_ADDR_SIZE   =   (FPW == 2) ? 7 :
+                               (FPW == 4) ? 6 :
+                               (FPW == 6) ? 5 :
+                               (FPW == 8) ? 5 :
+                               1;
 
 reg                         ram_w_en, ram_r_en;
 reg  [RAM_ADDR_SIZE-1:0]    ram_w_addr;
@@ -348,7 +351,6 @@ reg  [128-1:0]      data2crc_flit           [FPW-1:0];
 wire [DWIDTH-1:0]   data2crc;
 reg  [FPW-1:0]      data2crc_flit_is_hdr;
 reg  [FPW-1:0]      data2crc_flit_is_tail;
-reg  [FPW-1:0]      data2crc_flit_is_valid;
 
 generate
     for(f = 0; f < (FPW); f = f + 1) begin : concatenate_flits_to_single_reg
@@ -371,7 +373,7 @@ reg  [6:0]                  sum_requested_tokens_temp;  //Use this register for 
 reg  [9:0]                  remaining_tokens;
 
 //Registers for the RTC field in request packets
-reg  [4:0]                  rtc_return;
+reg                         rtc_return;
 reg  [4:0]                  rtc_return_val;
 reg                         rtc_return_sent;
 
@@ -496,7 +498,7 @@ if(!res_n) begin
     //Token Flow Control
     remaining_tokens                <= {10{1'b0}};
     rtc_return_val                  <= {5{1'b0}};
-    rtc_return                      <= {5{1'b0}};
+    rtc_return                      <= 1'b0;
 
     //Retry
     irtry_start_retry_cnt           <= {6{1'b0}};
@@ -536,7 +538,7 @@ else begin
     // end
 
     //RTC
-    rtc_return       <= {5{1'b0}};
+    rtc_return       <= 1'b0;
     //Initialize rtc to be transmitted after reset and warm reset
     if(rtc_rx_initialize) begin
         remaining_tokens <= rf_rx_buffer_rtc;
@@ -1190,7 +1192,6 @@ if(!res_n) begin
     //----Data
     data2crc_flit_is_hdr    <= {FPW{1'b0}};
     data2crc_flit_is_tail   <= {FPW{1'b0}};
-    data2crc_flit_is_valid  <= {FPW{1'b0}};
 
     for(i_f=0;i_f<FPW;i_f=i_f+1)begin
         data2crc_flit[i_f]  <= {128{1'b0}};
@@ -1201,7 +1202,6 @@ end else begin
     //Propagate signals
     data2crc_flit_is_hdr  <= data2rrp_stage_flit_is_hdr;
     data2crc_flit_is_tail <= data2rrp_stage_flit_is_tail;
-    data2crc_flit_is_valid<= data2rrp_stage_flit_is_valid;
 
     for(i_f=0;i_f<FPW;i_f=i_f+1)begin
 
@@ -1225,7 +1225,6 @@ end else begin
     end else if((last_transmitted_rx_hmc_frp != rx_hmc_frp) && !(|data2rrp_stage_flit_is_valid))begin //else send a PRET
         data2crc_flit_is_hdr[0]         <= 1'b1;
         data2crc_flit_is_tail[0]        <= 1'b1;
-        data2crc_flit_is_valid[0]       <= 1'b1;
         data2crc_flit[0][63:0]          <= pret_hdr;
         data2crc_flit[0][64+7:64]       <= rx_hmc_frp;
         last_transmitted_rx_hmc_frp     <= rx_hmc_frp;
@@ -1266,13 +1265,12 @@ tx_crc_combine #(
     .FPW(FPW),
     .LOG_FPW(LOG_FPW)
 )
-hmc_crc_logic_combine_I
+tx_crc_combine_I
 (
     .clk(clk),
     .res_n(res_n),
     .d_in_hdr(data2crc_flit_is_hdr),
     .d_in_tail(data2crc_flit_is_tail),
-    .d_in_valid(data2crc_flit_is_valid),
     .d_in_data(data2crc),
     .d_out_data(data_rdy)
 );

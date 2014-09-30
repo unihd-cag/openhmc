@@ -51,7 +51,7 @@ module hmc_controller_top #(
     parameter HMC_RF_WWIDTH         = 64,
     parameter HMC_RF_RWIDTH         = 64,
     parameter HMC_RF_AWIDTH         = 4,
-    parameter LOG_MAX_RTC           = 6
+    parameter LOG_MAX_RTC           = 8
 ) (
     //----------------------------------
     //----SYSTEM INTERFACES

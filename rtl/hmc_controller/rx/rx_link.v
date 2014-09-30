@@ -301,7 +301,8 @@ reg     [2:0]           next_seqnum_comb; //use param instead
 reg     [2:0]           first_seq_after_error;
 
 //------------------------------------------------------------------------------------Invalidation Stage
-localparam CYCLES_TO_COMPLETE_FULL_PACKET   =   (FPW == 4) ? 3 : //Assuming Max Pkt size = 9 FLITs
+localparam CYCLES_TO_COMPLETE_FULL_PACKET   =   (FPW == 2) ? 5 :
+                                                (FPW == 4) ? 3 : //Assuming Max Pkt size = 9 FLITs
                                                 (FPW == 6) ? 3 :
                                                 (FPW == 8) ? 2 :
                                                 1;
@@ -370,8 +371,9 @@ reg     [128-1:0]            input_buffer_d_in_flit    [FPW-1:0];
 reg     [FPW-1:0]            input_buffer_valid;
 reg     [FPW-1:0]            input_buffer_is_hdr;
 reg     [FPW-1:0]            input_buffer_is_tail;
-wire    [DWIDTH+(3*FPW)-1:0] input_buffer_d_in;
-wire    [DWIDTH+(3*FPW)-1:0] input_buffer_d_out;
+reg     [FPW-1:0]            input_buffer_is_error_rsp;
+wire    [DWIDTH+(4*FPW)-1:0] input_buffer_d_in;
+wire    [DWIDTH+(4*FPW)-1:0] input_buffer_d_out;
 wire                         input_buffer_empty;
 reg                          input_buffer_shift_in;
 wire                         input_buffer_shift_out;
@@ -382,15 +384,16 @@ generate
             assign input_buffer_d_in[f*128+128-1:f*128] = input_buffer_d_in_flit[f];
             assign input_buffer_d_in[DWIDTH+f]          = input_buffer_is_hdr[f];
             assign input_buffer_d_in[DWIDTH+f+FPW]      = input_buffer_is_tail[f];
-            assign input_buffer_d_in[DWIDTH+f+FPW+FPW]  =  input_buffer_valid[f];
+            assign input_buffer_d_in[DWIDTH+f+(2*FPW)]  = input_buffer_valid[f];
+            assign input_buffer_d_in[DWIDTH+f+(3*FPW)]  = input_buffer_is_error_rsp[f];
         end
 endgenerate
 
 //------------------------------------------------------------------------------------LINK RETRY
-reg  [5:0]  irtry_start_retry_cnt;
-reg  [5:0]  irtry_clear_error_cnt;
-reg  [5:0]  irtry_start_retry_cnt_comb;
-reg  [5:0]  irtry_clear_error_cnt_comb;
+reg  [4:0]  irtry_start_retry_cnt;
+reg  [4:0]  irtry_clear_error_cnt;
+reg  [4:0]  irtry_start_retry_cnt_comb;
+reg  [4:0]  irtry_clear_error_cnt_comb;
 reg         irtry_clear_trig;
 reg         irtry_clear_trig_comb;
 
@@ -683,7 +686,10 @@ always @(*)  begin
 
     flit_after_retry_stage_is_start_retry_comb = {FPW{1'b0}};
 
-    if((tx_error_abort_mode && !irtry_clear_trig) || |(flit_after_retry_stage_is_error))begin
+    if( (tx_error_abort_mode && !irtry_clear_trig) ||
+        |(flit_after_retry_stage_is_error) ||
+        |(flit_after_seq_check_is_error)
+    )begin
         flit_after_retry_stage_is_valid_mask_msb = {FPW{1'b0}};
     end else begin
         flit_after_retry_stage_is_valid_mask_msb = {FPW{1'b1}};
@@ -697,16 +703,19 @@ always @(*)  begin
 
     for(i_f = 0; i_f < (FPW); i_f = i_f + 1) begin
 
-        if( flit_after_lng_check_is_flow[i_f] && cmd(flit_after_lng_check[i_f]) == {CMD_FLOW,CMD_IRTRY} && !flit_after_lng_check_is_error[i_f]) begin
+        if( flit_after_lng_check_is_flow[i_f] &&
+            cmd(flit_after_lng_check[i_f]) == {CMD_FLOW,CMD_IRTRY} &&
+            !flit_after_lng_check_is_error[i_f]
+        ) begin
 
             if(irtry_start_retry_flag(flit_after_lng_check[i_f])) begin
                 //it's a start tx retry pkt
-                irtry_start_retry_cnt_comb   = irtry_start_retry_cnt_comb + {{5{1'b0}},1'b1};
-                irtry_clear_error_cnt_comb   = {6{1'b0}};
+                irtry_start_retry_cnt_comb   = irtry_start_retry_cnt_comb + {{4{1'b0}},1'b1};
+                irtry_clear_error_cnt_comb   = {5{1'b0}};
             end else begin
                 //must be clear error pkt
-                irtry_clear_error_cnt_comb   = irtry_clear_error_cnt_comb + {{5{1'b0}},1'b1};
-                irtry_start_retry_cnt_comb   = {6{1'b0}};
+                irtry_clear_error_cnt_comb   = irtry_clear_error_cnt_comb + {{4{1'b0}},1'b1};
+                irtry_start_retry_cnt_comb   = {5{1'b0}};
             end
 
             if(irtry_start_retry_cnt_comb >= rf_irtry_received_threshold) begin
@@ -723,8 +732,8 @@ always @(*)  begin
 
         end else begin
             //Reset both counters when received a non-irtry packet
-            irtry_start_retry_cnt_comb = {6{1'b0}};
-            irtry_clear_error_cnt_comb = {6{1'b0}};
+            irtry_start_retry_cnt_comb = {5{1'b0}};
+            irtry_clear_error_cnt_comb = {5{1'b0}};
         end
     end
 end
@@ -736,8 +745,8 @@ always @(posedge clk)  begin `endif
 if(!res_n) begin
     irtry_clear_trig      <= 1'b0;
 
-    irtry_clear_error_cnt <= {6{1'b0}};
-    irtry_start_retry_cnt <= {6{1'b0}};
+    irtry_clear_error_cnt <= {5{1'b0}};
+    irtry_start_retry_cnt <= {5{1'b0}};
 
 end else begin
     irtry_clear_trig      <= irtry_clear_trig_comb;
@@ -770,11 +779,15 @@ end else begin
     end
     flit_after_retry_stage_is_hdr         <= flit_after_lng_check_is_hdr;
     flit_after_retry_stage_is_tail        <= flit_after_lng_check_is_tail;
-    flit_after_retry_stage_is_poisoned    <= flit_after_lng_check_is_poisoned & flit_after_retry_stage_is_valid_mask_msb & flit_after_retry_stage_is_valid_mask_lsb;
+    flit_after_retry_stage_is_poisoned    <= flit_after_lng_check_is_poisoned &
+                                             flit_after_retry_stage_is_valid_mask_msb &
+                                             flit_after_retry_stage_is_valid_mask_lsb;
     flit_after_retry_stage_is_flow        <= flit_after_lng_check_is_flow;
     flit_after_retry_stage_has_rtc        <= flit_after_lng_check_has_rtc;
     flit_after_retry_stage_is_error       <= flit_after_lng_check_is_error;
-    flit_after_retry_stage_is_valid       <= flit_after_lng_check_is_valid & flit_after_retry_stage_is_valid_mask_msb & flit_after_retry_stage_is_valid_mask_lsb;
+    flit_after_retry_stage_is_valid       <= flit_after_lng_check_is_valid &
+                                             flit_after_retry_stage_is_valid_mask_msb &
+                                             flit_after_retry_stage_is_valid_mask_lsb;
     flit_after_retry_stage_is_start_retry <= flit_after_retry_stage_is_start_retry_comb;
 
 end
@@ -866,7 +879,8 @@ end else begin
     flit_after_seq_check_is_poisoned    <= flit_after_retry_stage_is_poisoned;
     flit_after_seq_check_is_flow        <= flit_after_retry_stage_is_flow;
     flit_after_seq_check_has_rtc        <= flit_after_retry_stage_has_rtc;
-    flit_after_seq_check_is_error       <= flit_after_retry_stage_is_error | flit_after_seq_check_is_error_comb;
+    flit_after_seq_check_is_error       <= flit_after_retry_stage_is_error |
+                                           flit_after_seq_check_is_error_comb;
     flit_after_seq_check_is_start_retry <= flit_after_retry_stage_is_start_retry;
     for(i_f = 0; i_f < (FPW); i_f = i_f + 1) begin
         flit_after_seq_check[i_f]     <= flit_after_retry_stage[i_f];
@@ -887,7 +901,9 @@ always @(*)  begin
     for(i_f = 0; i_f < (FPW); i_f = i_f + 1) begin
 
         if(flit_after_retry_stage_is_hdr[i_f]) begin
-            if(lng(flit_after_retry_stage[i_f]) < 2 || lng(flit_after_retry_stage[i_f]) > 9) begin
+            if( lng(flit_after_retry_stage[i_f]) < 2 ||
+                lng(flit_after_retry_stage[i_f]) > 9
+            ) begin
                 lng_comb = 1;
             end else begin
                 lng_comb = lng(flit_after_retry_stage[i_f]);
@@ -942,7 +958,8 @@ end else begin
     flit_in_invalidation_data[0]            <= flit_after_seq_check_word;
     flit_in_invalidation_is_hdr[0]          <= flit_after_seq_check_is_hdr;
     flit_in_invalidation_is_tail[0]         <= flit_after_seq_check_is_tail;
-    flit_in_invalidation_is_poisoned[0]     <= flit_after_seq_check_is_poisoned & ~flit_after_seq_check_is_error;
+    flit_in_invalidation_is_poisoned[0]     <= flit_after_seq_check_is_poisoned &
+                                               ~flit_after_seq_check_is_error;
     flit_in_invalidation_is_flow[0]         <= flit_after_seq_check_is_flow;
     flit_in_invalidation_has_rtc[0]         <= flit_after_seq_check_has_rtc;
     flit_in_invalidation_is_start_retry[0]  <= flit_after_seq_check_is_start_retry;
@@ -999,7 +1016,7 @@ end else begin
         //If there is a poisoned packet mask out, but leave all FLITs before and after untouched
         for(i_f = FPW-1; i_f>=0; i_f = i_f-1) begin
             if(flit_after_seq_check_is_poisoned[i_f]) begin
-                    flit_in_invalidation_mask_poison <= ({FPW{1'b1}} >> (FPW-i_f-1+lng_per_tail[i_f])) | ({FPW{1'b1}} << (i_f+1));
+                    flit_in_invalidation_mask_poison <= ({FPW{1'b1}} >> (FPW-i_f-1+lng_per_tail[i_f])) | ({FPW{1'b1}} << (i_f));
             end
         end
 
@@ -1039,7 +1056,7 @@ end
 always @(*)  begin
     rtc_sum_comb                  = {8{1'b0}};
     for(i_f = 0; i_f < (FPW); i_f = i_f + 1) begin
-        if(checked_flit_has_rtc[i_f] || checked_flit_is_poisoned[i_f])begin
+        if(checked_flit_has_rtc[i_f])begin
             rtc_sum_comb                  =  rtc_sum_comb + rtc(checked_flit[i_f]);
         end
     end
@@ -1065,10 +1082,10 @@ end else begin
     //Process FLITs and extract frp/seq/rrp if applicable
     for(i_f = 0; i_f < (FPW); i_f = i_f + 1) begin
 
-        if(checked_flit_is_tail[i_f]|| checked_flit_is_flow[i_f] || checked_flit_is_poisoned[i_f]) begin
+        if(checked_flit_is_tail[i_f]) begin
             tx_rrp                  <=  rrp(checked_flit[i_f]);
 
-            if(checked_flit_has_rtc[i_f] || checked_flit_is_poisoned[i_f])begin
+            if(checked_flit_has_rtc[i_f])begin
                 tx_hmc_frp                      <= frp(checked_flit[i_f]);
                 first_seq_after_error           <= seq(checked_flit[i_f]) + 3'h1;
             end
@@ -1098,6 +1115,7 @@ if(!res_n) begin
     input_buffer_valid        <= {FPW{1'b0}};
     input_buffer_is_hdr       <= {FPW{1'b0}};
     input_buffer_is_tail      <= {FPW{1'b0}};
+    input_buffer_is_error_rsp <= {FPW{1'b0}};
 
     for(i_f = 0; i_f < (FPW); i_f = i_f + 1) begin
         input_buffer_d_in_flit[i_f]     <= {128{1'b0}};
@@ -1106,20 +1124,31 @@ if(!res_n) begin
 end else begin
 
     input_buffer_shift_in       <= 1'b0;
+    input_buffer_is_error_rsp   <= {FPW{1'b0}};
 
     for(i_f = 0; i_f < (FPW); i_f = i_f + 1) begin
-        input_buffer_d_in_flit[i_f]           <= {128{1'b0}};
+        input_buffer_d_in_flit[i_f]        <= {128{1'b0}};
 
         //Flow and poisoned packets are not forwarded
-        if(!checked_flit_is_flow[i_f] && !checked_flit_is_poisoned[i_f])begin
-            input_buffer_d_in_flit[i_f]           <= checked_flit[i_f];
+        if(checked_flit_is_valid[i_f]) begin
+            if(!checked_flit_is_flow[i_f] && !checked_flit_is_poisoned[i_f])begin
+                input_buffer_d_in_flit[i_f]           <= checked_flit[i_f];
+            end
+            if(checked_flit_is_hdr[i_f] && (cmd(checked_flit[i_f])==6'b111110)) begin
+                input_buffer_is_error_rsp[i_f]  <= 1'b1;
+            end
         end
     end
 
     //Mask out any flow or poisoned packets
-    input_buffer_valid      <= checked_flit_is_valid    & ~checked_flit_is_flow & ~checked_flit_is_poisoned;
-    input_buffer_is_hdr     <= checked_flit_is_hdr      & ~checked_flit_is_flow & ~checked_flit_is_poisoned;
-    input_buffer_is_tail    <= checked_flit_is_tail     & ~checked_flit_is_flow & ~checked_flit_is_poisoned;
+    input_buffer_valid      <=  checked_flit_is_valid &
+                                ~checked_flit_is_flow &
+                                ~checked_flit_is_poisoned;
+    input_buffer_is_hdr     <=  checked_flit_is_hdr   &
+                                ~checked_flit_is_flow;
+    input_buffer_is_tail    <=  checked_flit_is_tail  &
+                                ~checked_flit_is_flow &
+                                ~checked_flit_is_poisoned;
 
     //If there is still a valid packet remaining after applying the mask
     if(|(checked_flit_is_valid  & ~checked_flit_is_flow & ~checked_flit_is_poisoned))begin
@@ -1140,7 +1169,8 @@ always @(*)  begin
         if(checked_flit_is_poisoned[i_f])begin
             rf_cnt_poisoned_comb = rf_cnt_poisoned_comb + {{LOG_FPW{1'b0}},1'b1};
         end
-        if(input_buffer_is_tail[i_f])begin
+        if(input_buffer_is_tail[i_f] && !input_buffer_is_error_rsp[i_f])begin
+            //if its a tail but not error response
             rf_cnt_rsp_comb = rf_cnt_rsp_comb + {{LOG_FPW{1'b0}},1'b1};
         end
     end
@@ -1166,7 +1196,8 @@ always @(*)  begin
 
     if(input_buffer_shift_out)begin
         for(i_f = 0; i_f < (FPW); i_f = i_f + 1) begin
-            tokens_out_of_fifo_sum_comb  =   tokens_out_of_fifo_sum_comb + input_buffer_d_out[DWIDTH+i_f+(2*FPW)];    //increment if there's a valid FLIT
+            tokens_out_of_fifo_sum_comb  =   tokens_out_of_fifo_sum_comb + 
+                                             (input_buffer_d_out[DWIDTH+i_f+(2*FPW)] && !input_buffer_d_out[DWIDTH+i_f+(3*FPW)]);    //increment if there's a valid FLIT
         end
     end
 end
@@ -1240,7 +1271,7 @@ rx_crc_compare #(
     .FPW(FPW),
     .LOG_FPW(LOG_FPW)
 )
-hmc_crc_logic_compare_I
+rx_crc_compare
 (
     .clk(clk),
     .res_n(res_n),
@@ -1262,8 +1293,8 @@ hmc_crc_logic_compare_I
 );
 
 //Buffer Fifo - Depth = Max Tokens
-sync_fifo_simple #(
-        .DATASIZE(DWIDTH+(3*FPW)),   //+3*FPW for header/tail/valid information -> AXi-4 TUSER signal
+sync_fifo #(
+        .DATASIZE(DWIDTH+(4*FPW)),   //+4*FPW for header/tail/valid/error information -> AXi-4 TUSER signal
         .ADDRSIZE(LOG_MAX_RTC)
     ) input_buffer_I(
         .clk(clk),

@@ -20,7 +20,8 @@ ${OPENHMC_PATH}/rtl/hmc_controller/rx/rx_descrambler.v
 ${OPENHMC_PATH}/rtl/hmc_controller/rx/rx_crc_compare.v
 
 ####CRC
-${OPENHMC_PATH}/rtl/hmc_controller/crc/crc_128bit_pipe.v
+${OPENHMC_PATH}/rtl/hmc_controller/crc/crc_128_init.v
+${OPENHMC_PATH}/rtl/hmc_controller/crc/crc_accu.v
 
 ####Register File
 ${OPENHMC_PATH}/rtl/hmc_controller/register_file/hmc_controller_rf.v
