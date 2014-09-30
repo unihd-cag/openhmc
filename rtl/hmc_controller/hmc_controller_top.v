@@ -241,9 +241,9 @@ tx_link #(
     //----FROM HMC_TX_HTAX_LOGIC
     //----------------------------------
     .d_in_data(tx_d_in_data),
-    .d_in_flit_is_hdr(tx_d_in_ctrl[FPW-1:0]),
-    .d_in_flit_is_tail(tx_d_in_ctrl[(2*FPW)-1:FPW]),
-    .d_in_flit_is_valid(tx_d_in_ctrl[(3*FPW)-1:2*FPW]),
+    .d_in_flit_is_valid(tx_d_in_ctrl[FPW-1:0]),
+    .d_in_flit_is_hdr(tx_d_in_ctrl[(2*FPW)-1:1*FPW]),
+    .d_in_flit_is_tail(tx_d_in_ctrl[(3*FPW)-1:(2*FPW)]),
     .d_in_empty(tx_empty),
     .d_in_a_empty(tx_a_empty),
     .d_in_shift_out(tx_shift_out),

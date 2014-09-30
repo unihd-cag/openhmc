@@ -382,9 +382,9 @@ assign                       input_buffer_shift_out    =   ~(input_buffer_empty 
 generate
         for(f = 0; f < (FPW); f = f + 1) begin : assign_flits_to_input_buffer_to_a_single_reg
             assign input_buffer_d_in[f*128+128-1:f*128] = input_buffer_d_in_flit[f];
-            assign input_buffer_d_in[DWIDTH+f]          = input_buffer_is_hdr[f];
-            assign input_buffer_d_in[DWIDTH+f+FPW]      = input_buffer_is_tail[f];
-            assign input_buffer_d_in[DWIDTH+f+(2*FPW)]  = input_buffer_valid[f];
+            assign input_buffer_d_in[DWIDTH+f]          = input_buffer_valid[f];
+            assign input_buffer_d_in[DWIDTH+f+FPW]      = input_buffer_is_hdr[f];
+            assign input_buffer_d_in[DWIDTH+f+(2*FPW)]  = input_buffer_is_tail[f];
             assign input_buffer_d_in[DWIDTH+f+(3*FPW)]  = input_buffer_is_error_rsp[f];
         end
 endgenerate
@@ -1197,7 +1197,8 @@ always @(*)  begin
     if(input_buffer_shift_out)begin
         for(i_f = 0; i_f < (FPW); i_f = i_f + 1) begin
             tokens_out_of_fifo_sum_comb  =   tokens_out_of_fifo_sum_comb + 
-                                             (input_buffer_d_out[DWIDTH+i_f+(2*FPW)] && !input_buffer_d_out[DWIDTH+i_f+(3*FPW)]);    //increment if there's a valid FLIT
+                                             (input_buffer_d_out[DWIDTH+i_f] && 
+                                             !input_buffer_d_out[DWIDTH+i_f+(3*FPW)]);    //increment if there's a valid FLIT, but not an error response
         end
     end
 end
