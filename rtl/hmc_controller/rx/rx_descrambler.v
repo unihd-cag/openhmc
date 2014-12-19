@@ -84,6 +84,7 @@ module rx_descrambler #(
     output reg locked,
     input wire [DWIDTH-1:0] data_in,
     output reg [DWIDTH-1:0] data_out
+    
 );
 
 reg [14:0] lfsr; // LINEAR FEEDBACK SHIFT REGISTER
@@ -103,11 +104,12 @@ always @(posedge clk)  begin `endif
 
         data_out <= data_out_tmp;
 
-        if (!locked) begin
+        if (!locked && |data_in) begin
             lfsr <= calculated_seed;
             // Locked when the calculated seeds match
-            if (calculated_seed == lfsr_steps[DWIDTH-1])
+            if (calculated_seed == lfsr_steps[DWIDTH-1]) begin
                 locked <= 1'b1;
+            end
         end else begin
             if (bit_slip) // lfsr_steps[DWIDTH]
                 lfsr[14:0] <= { (lfsr_steps[DWIDTH-1][1] ^ lfsr_steps[DWIDTH-1][0]) , lfsr_steps[DWIDTH-1][14:1] };

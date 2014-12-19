@@ -45,9 +45,9 @@ module tx_link #(
     parameter LOG_FPW           = 2,
     parameter FPW               = 4,
     parameter DWIDTH            = 512,
-    parameter HMC_NUM_LANES     = 8,
+    parameter NUM_LANES     = 8,
     parameter HMC_PTR_SIZE      = 8,
-    parameter HMC_RF_WWIDTH     = 64
+    parameter HMC_RF_RWIDTH     = 64
 ) (
 
     //----------------------------------
@@ -94,9 +94,9 @@ module tx_link #(
     //----------------------------------
     //Monitoring    1-cycle set to increment
     output  reg                         rf_cnt_retry,
-    output  reg  [HMC_RF_WWIDTH-1:0]    rf_sent_p,
-    output  reg  [HMC_RF_WWIDTH-1:0]    rf_sent_np,
-    output  reg  [HMC_RF_WWIDTH-1:0]    rf_sent_r,
+    output  reg  [HMC_RF_RWIDTH-1:0]    rf_sent_p,
+    output  reg  [HMC_RF_RWIDTH-1:0]    rf_sent_np,
+    output  reg  [HMC_RF_RWIDTH-1:0]    rf_sent_r,
     output  reg                         rf_run_length_bit_flip,
 
     //Status
@@ -111,7 +111,9 @@ module tx_link #(
     //Control
     input   wire                        rf_hmc_sleep_requested,
     //input   wire                        rf_warm_reset,
+    input   wire                        rf_hmc_init_cont_set,
     input   wire                        rf_scrambler_disable,
+    input   wire                        rf_dbg_dont_send_tret,
     input   wire [9:0]                  rf_rx_buffer_rtc,
     input   wire [2:0]                  rf_first_cube_ID,
     input   wire [4:0]                  rf_irtry_to_send,
@@ -127,7 +129,7 @@ module tx_link #(
 //-----------------------------------------------------------------------------------------------------
 //=====================================================================================================
 //------------------------------------------------------------------------------------General Assignments
-localparam LANE_WIDTH       = (DWIDTH/HMC_NUM_LANES);
+localparam LANE_WIDTH       = (DWIDTH/NUM_LANES);
 localparam NULL_FLIT        = {128{1'b0}};
 
 integer i_f;    //counts to FPW
@@ -160,7 +162,7 @@ assign seed_lane[13]    = (rf_scrambler_disable == 1'b0) ? 15'h6014 : 15'h0;
 assign seed_lane[14]    = (rf_scrambler_disable == 1'b0) ? 15'h077B : 15'h0;
 assign seed_lane[15]    = (rf_scrambler_disable == 1'b0) ? 15'h261F : 15'h0;
 
-wire [HMC_NUM_LANES-1:0]      bit_was_flipped;
+wire [NUM_LANES-1:0]      bit_was_flipped;
 
 //------------------------------------------------------------------------------------FSM and States
 reg [3:0]  state;
@@ -202,18 +204,18 @@ wire [DWIDTH-1:0]   data_to_scrambler;
 
 genvar l,n;
 generate
-    for(n = 0; n < HMC_NUM_LANES; n = n + 1) begin : reorder_data_to_lanes
+    for(n = 0; n < NUM_LANES; n = n + 1) begin : reorder_data_to_lanes
         for(l = 0; l < LANE_WIDTH; l = l + 1) begin
-            assign data_to_scrambler[l+n*LANE_WIDTH] = data_rdy[l*HMC_NUM_LANES+n];
+            assign data_to_scrambler[l+n*LANE_WIDTH] = data_rdy[l*NUM_LANES+n];
         end
     end
 endgenerate
 
 //------------------------------------------------------------------------------------Init Regs
-localparam TS1_SEQ_INC_VAL_PER_CYCLE    = (HMC_NUM_LANES==8) ? FPW : (FPW/2);
-localparam NUM_NULL_TO_SEND_BEFORE_IDLE = 32; //see HMC spec
+localparam TS1_SEQ_INC_VAL_PER_CYCLE    = (NUM_LANES==8) ? FPW : (FPW/2);
+localparam NUM_NULL_TO_SEND_BEFORE_IDLE = 63; //see HMC spec
 
-wire  [(HMC_NUM_LANES*4)-1:0]   ts1_seq_part_reordered      [TS1_SEQ_INC_VAL_PER_CYCLE-1:0];    //ts1 seq is 4 bits
+wire  [(NUM_LANES*4)-1:0]       ts1_seq_part_reordered      [TS1_SEQ_INC_VAL_PER_CYCLE-1:0];    //ts1 seq is 4 bits
 reg   [3:0]                     ts1_seq_nr_per_flit         [TS1_SEQ_INC_VAL_PER_CYCLE-1:0];
 wire  [128-1:0]                 ts1_flit                    [FPW-1:0];
 reg   [5:0]                     num_init_nulls_sent;
@@ -222,10 +224,10 @@ generate
     for(f = 0; f < TS1_SEQ_INC_VAL_PER_CYCLE; f = f + 1) begin : generate_lane_dependent_ts1_sequence
 
         for(n=0; n<4; n=n+1) begin
-            assign ts1_seq_part_reordered[f][(n*HMC_NUM_LANES)+HMC_NUM_LANES-1:(n*HMC_NUM_LANES)] = {HMC_NUM_LANES{ts1_seq_nr_per_flit[f][n]}};
+            assign ts1_seq_part_reordered[f][(n*NUM_LANES)+NUM_LANES-1:(n*NUM_LANES)] = {NUM_LANES{ts1_seq_nr_per_flit[f][n]}};
         end
 
-        if(HMC_NUM_LANES==8) begin
+        if(NUM_LANES==8) begin
 
             assign ts1_flit[f] = {
                 32'hffffffff,32'h0,1'h1,7'h0,7'b1111111,1'h0,7'h0,1'h1,1'h0,7'b1111111,ts1_seq_part_reordered[f]
@@ -614,7 +616,7 @@ else begin
         //Issue NULL Flits if there's nothing else to do
 
             //SEND TRET PACKET even if there are no tokens available
-            if(remaining_tokens && !ram_full && !tx_retry_ongoing)begin
+            if(remaining_tokens && !ram_full && !tx_retry_ongoing && !rf_dbg_dont_send_tret)begin
                 //RTC will be added in the RTC stage
                 data2rtc_stage_flit[0]            <= {{64{1'b0}},tret_hdr};
                 data2rtc_stage_flit_is_hdr[0]     <= 1'b1;
@@ -804,6 +806,12 @@ else begin
         end
 
     endcase
+
+    if(!rf_hmc_init_cont_set) begin
+        state <= TX_NULL_1;
+        num_init_nulls_sent <= {6{1'b0}};
+        rtc_rx_initialize   <= 1'b1;
+    end
 end
 end
 
@@ -879,13 +887,13 @@ end
 always @(posedge clk or negedge res_n)  begin `else
 always @(posedge clk)  begin `endif
 if(!res_n) begin
-    rf_sent_p   <= {HMC_RF_WWIDTH{1'b0}};
-    rf_sent_np  <= {HMC_RF_WWIDTH{1'b0}};
-    rf_sent_r   <= {HMC_RF_WWIDTH{1'b0}};
+    rf_sent_p   <= {HMC_RF_RWIDTH{1'b0}};
+    rf_sent_np  <= {HMC_RF_RWIDTH{1'b0}};
+    rf_sent_r   <= {HMC_RF_RWIDTH{1'b0}};
 end else begin
-    rf_sent_p   <= rf_sent_p  + {{HMC_RF_WWIDTH-LOG_FPW-1{1'b0}},rf_sent_p_comb};
-    rf_sent_np  <= rf_sent_np + {{HMC_RF_WWIDTH-LOG_FPW-1{1'b0}},rf_sent_np_comb};
-    rf_sent_r   <= rf_sent_r  + {{HMC_RF_WWIDTH-LOG_FPW-1{1'b0}},rf_sent_r_comb};
+    rf_sent_p   <= rf_sent_p  + {{HMC_RF_RWIDTH-LOG_FPW-1{1'b0}},rf_sent_p_comb};
+    rf_sent_np  <= rf_sent_np + {{HMC_RF_RWIDTH-LOG_FPW-1{1'b0}},rf_sent_np_comb};
+    rf_sent_r   <= rf_sent_r  + {{HMC_RF_RWIDTH-LOG_FPW-1{1'b0}},rf_sent_r_comb};
 end
 end
 
@@ -906,7 +914,7 @@ end else begin
         error_abort_mode_clr_cnt   <= error_abort_mode_clr_cnt + 1;
     end
 
-    if(rx_error_abort_mode_cleared) begin
+    if(rx_error_abort_mode_cleared || !rf_hmc_init_cont_set) begin
         error_abort_mode_clr_cnt   <= {8{1'b0}};
     end
 
@@ -1242,7 +1250,7 @@ end
 //Retry Buffer
 generate
     for(f=0;f<FPW;f=f+1)begin : retry_buffer_gen
-        ram #(
+        hmc_ram #(
             .DATASIZE(128+4),      //FLIT + flow/valid/hdr/tail indicator
             .ADDRSIZE(RAM_ADDR_SIZE)
         )
@@ -1277,7 +1285,7 @@ tx_crc_combine_I
 
 //Scrambler
 generate
-    for(n=0;n<HMC_NUM_LANES;n=n+1) begin : scrambler_gen
+    for(n=0;n<NUM_LANES;n=n+1) begin : scrambler_gen
         tx_scrambler #(
             .DWIDTH(LANE_WIDTH)
         )
@@ -1285,7 +1293,7 @@ generate
         (
             .clk(clk),
             .res_n(res_n),
-            .load_lfsr(1'b0),
+            .load_lfsr(rf_scrambler_disable),
             .seed(seed_lane[n]), // unique per lane
             .data_in(data_to_scrambler[n*LANE_WIDTH+LANE_WIDTH-1:n*LANE_WIDTH]),
             .data_out(phy_scrambled_data_out[n*LANE_WIDTH+LANE_WIDTH-1:n*LANE_WIDTH]),
@@ -1294,6 +1302,8 @@ generate
         );
     end
 endgenerate
+
+
 
 endmodule
 `default_nettype wire

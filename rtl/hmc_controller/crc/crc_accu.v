@@ -35,21 +35,7 @@
  *   along with this source file.  If not, see <http://www.gnu.org/licenses/>.
  *
  *
- *  Module name: in_128bit_pipe
- *
- *
- *
- *  Description:  If valid is set the IN2 value for the input inData will arrive in
- *                the next cycle on the in output.
- *
- *  Note:         Currently the initialization value of the IN2 register is 0, if
- *                this must be changed to all 1s then the calculation must also take
- *                into account whether an even or odd number of IN2 bits feeds back
- *                into the IN2 output bits. This is due to the used XOR gates. When
- *                the reset is 0 then the IN2 feedback values have no effect as:
- *                a XOR 0 = a, but when reset is 1 then a XOR 1 = !a so all value
- *                with an even number of IN2 feedback paths remain unchanged, while
- *                those with an odd number must be inverted!
+ *  Module name: crc_accu
  */
 
 module crc_accu #(parameter FPW=4)(
@@ -72,9 +58,10 @@ module crc_accu #(parameter FPW=4)(
     output reg  [31:0]          crc_out
 );
 
+integer i_f;
+
 reg  [31:0]    crc_temp [FPW:0];
-reg  [31:0]    crc      ;
-reg  [FPW-1:0] remainder_valid;
+reg  [31:0]    crc;
 
 wire [31:0]    in [FPW-1:0];
 
@@ -86,23 +73,17 @@ generate
 endgenerate
  
 
-integer i_f;
-
 `ifdef ASYNC_RES
 always @(posedge clk or negedge res_n) `else
 always @(posedge clk) `endif
 begin
 if (!res_n) begin
-    // remainder_valid     <= {FPW{1'b0}};
-    // for(i_f=0;i_f<FPW;i_f=i_f+1) begin
-        crc    <= {32{1'b0}};
-    // end
+    crc    <= {32{1'b0}};
 end
 else begin
-    //remainder_valid <= valid;
     for(i_f=0;i_f<FPW;i_f=i_f+1) begin
         if(valid[i_f])begin
-        crc    <= crc_temp[i_f+1];
+            crc    <= crc_temp[i_f+1];
         end
     end
 end
@@ -113,14 +94,10 @@ always @(posedge clk or negedge res_n) `else
 always @(posedge clk) `endif
 begin
 if (!res_n) begin
-    crc_out             <= 32'h0;
+    crc_out <= 32'h0;
 end
 else begin
-    // for(i_f=0;i_f<FPW;i_f=i_f+1) begin
-        // if(remainder_valid[i_f]) begin
-            crc_out <= crc;
-        // end
-    // end
+    crc_out <= crc;
 end
 end
 

@@ -35,26 +35,20 @@
  *   along with this source file.  If not, see <http://www.gnu.org/licenses/>.
  *
  *
- *  Module name: hmc_controller_rf
+ *  Module name: hmc_controller_16x_rf
+ *
+ *  
  */
- /*
-status_general: base: 0x0 size: 8
-status_init: base: 0x8 size: 8
-control: base: 0x10 size: 8
-poisoned_packets: base: 0x18 size: 8
-sent_np: base: 0x20 size: 8
-sent_p: base: 0x28 size: 8
-sent_r: base: 0x30 size: 8
-rcvd_rsp: base: 0x38 size: 8
-counter_reset: base: 0x40 size: 8
-link_retries: base: 0x48 size: 8
-run_length_bit_flip: base: 0x50 size: 8
-*/
 
-module hmc_controller_rf
+module hmc_controller_16x_rf
 (
+    ///\defgroup sys
+    ///@{ 
     input wire res_n,
     input wire clk,
+    ///}@ 
+    ///\defgroup rw_if
+    ///@{ 
     input wire[6:3] address,
     output reg[63:0] read_data,
     output reg invalid_address,
@@ -62,6 +56,7 @@ module hmc_controller_rf
     input wire read_en,
     input wire write_en,
     input wire[63:0] write_data,
+    ///}@ 
     input wire status_general_link_up_next,
     input wire status_general_link_training_next,
     input wire status_general_sleep_mode_next,
@@ -77,20 +72,23 @@ module hmc_controller_rf
     input wire[1:0] status_init_tx_init_status_next,
     input wire status_init_hmc_init_TS1_next,
     output reg control_p_rst_n,
+    output reg control_hmc_init_cont_set,
     output reg control_set_hmc_sleep,
     output reg control_scrambler_disable,
     output reg control_run_length_enable,
+    output reg[2:0] control_first_cube_ID,
+    output reg control_debug_dont_send_tret,
     output reg[9:0] control_rx_token_count,
     output reg[4:0] control_irtry_received_threshold,
     output reg[4:0] control_irtry_to_send,
     output reg[7:0] control_bit_slip_time,
-    output reg[2:0] control_first_cube_ID,
-    input wire[63:0] poisoned_packets_cnt_next,
-    input wire[63:0] sent_np_cnt_next,
     input wire[63:0] sent_p_cnt_next,
+    input wire[63:0] sent_np_cnt_next,
     input wire[63:0] sent_r_cnt_next,
+    input wire[63:0] poisoned_packets_cnt_next,
     input wire[63:0] rcvd_rsp_cnt_next,
-    input wire link_retries_count_countup,
+    input wire tx_link_retries_count_countup,
+    input wire errors_on_rx_count_countup,
     input wire run_length_bit_flip_count_countup
 
 );
@@ -113,25 +111,40 @@ module hmc_controller_rf
     reg status_init_all_descramblers_aligned;
     reg[1:0] status_init_tx_init_status;
     reg status_init_hmc_init_TS1;
-    reg control_rsvd_control_1;
-    reg[63:0] poisoned_packets_cnt;
-    reg[63:0] sent_np_cnt;
+    reg[6:0] control_rsvd_control_0;
+    reg[5:0] control_rsvd_control_1;
+    reg[2:0] control_rsvd_control_2;
+    reg[2:0] control_rsvd_control_3;
     reg[63:0] sent_p_cnt;
+    reg[63:0] sent_np_cnt;
     reg[63:0] sent_r_cnt;
+    reg[63:0] poisoned_packets_cnt;
     reg[63:0] rcvd_rsp_cnt;
     reg rreinit;
-    wire[31:0] link_retries_count;
+    wire[31:0] tx_link_retries_count;
+    wire[31:0] errors_on_rx_count;
     wire[31:0] run_length_bit_flip_count;
 
     counter48 #(
         .DATASIZE(32)
-    ) link_retries_count_I (
+    ) tx_link_retries_count_I (
         .clk(clk),
         .res_n(res_n),
-        .increment(link_retries_count_countup),
+        .increment(tx_link_retries_count_countup),
         .load(32'b0),
         .load_enable(rreinit),
-        .value(link_retries_count)
+        .value(tx_link_retries_count)
+    );
+
+    counter48 #(
+        .DATASIZE(32)
+    ) errors_on_rx_count_I (
+        .clk(clk),
+        .res_n(res_n),
+        .increment(errors_on_rx_count_countup),
+        .load(32'b0),
+        .load_enable(rreinit),
+        .value(errors_on_rx_count)
     );
 
     counter48 #(
@@ -188,8 +201,8 @@ module hmc_controller_rf
         if (!res_n)
         begin
             status_init_lane_descramblers_locked <= 0;
-            status_init_descrambler_part_aligned <= 8'h0;
-            status_init_descrambler_aligned <= 8'h0;
+            status_init_descrambler_part_aligned <= 0;
+            status_init_descrambler_aligned <= 0;
             status_init_all_descramblers_aligned <= 1'h0;
             status_init_tx_init_status <= 2'h0;
             status_init_hmc_init_TS1 <= 1'h0;
@@ -214,15 +227,20 @@ module hmc_controller_rf
         if (!res_n)
         begin
             control_p_rst_n <= 1'h0;
+            control_hmc_init_cont_set <= 1'b0;
             control_set_hmc_sleep <= 1'h0;
             control_scrambler_disable <= 1'h0;
             control_run_length_enable <= 1'h0;
-            control_rx_token_count <= 250;
-            control_rsvd_control_1 <= 1'h0;
-            control_irtry_received_threshold <= 5'h10;
-            control_irtry_to_send <= 5'h14;
-            control_bit_slip_time <= 8'h30;
             control_first_cube_ID <= 3'h0;
+            control_debug_dont_send_tret <= 1'h0;
+            control_rsvd_control_0 <= 7'h0;
+            control_rx_token_count <= 100;
+            control_rsvd_control_1 <= 6'h0;
+            control_irtry_received_threshold <= 5'h10;
+            control_rsvd_control_2 <= 3'h0;
+            control_irtry_to_send <= 5'h14;
+            control_rsvd_control_3 <= 3'h0;
+            control_bit_slip_time <= 8'h24;
         end
         else
         begin
@@ -233,68 +251,44 @@ module hmc_controller_rf
             end
             if((address[6:3]== 2) && write_en)
             begin
-                control_set_hmc_sleep <= write_data[1:1];
+                control_hmc_init_cont_set <= write_data[1:1];
             end
             if((address[6:3]== 2) && write_en)
             begin
-                control_scrambler_disable <= write_data[2:2];
+                control_set_hmc_sleep <= write_data[2:2];
             end
             if((address[6:3]== 2) && write_en)
             begin
-                control_run_length_enable <= write_data[3:3];
+                control_scrambler_disable <= write_data[3:3];
             end
             if((address[6:3]== 2) && write_en)
             begin
-                control_rx_token_count <= write_data[13:4];
+                control_run_length_enable <= write_data[4:4];
             end
             if((address[6:3]== 2) && write_en)
             begin
-                control_irtry_received_threshold <= write_data[19:15];
+                control_first_cube_ID <= write_data[7:5];
             end
             if((address[6:3]== 2) && write_en)
             begin
-                control_irtry_to_send <= write_data[24:20];
+                control_debug_dont_send_tret <= write_data[8:8];
             end
             if((address[6:3]== 2) && write_en)
             begin
-                control_bit_slip_time <= write_data[32:25];
+                control_rx_token_count <= write_data[25:16];
             end
             if((address[6:3]== 2) && write_en)
             begin
-                control_first_cube_ID <= write_data[35:33];
+                control_irtry_received_threshold <= write_data[36:32];
             end
-        end
-    end
-
-    /* register poisoned_packets */
-    `ifdef ASYNC_RES
-    always @(posedge clk or negedge res_n) `else
-    always @(posedge clk) `endif
-    begin
-        if (!res_n)
-        begin
-            poisoned_packets_cnt <= 64'h0;
-        end
-        else
-        begin
-
-                poisoned_packets_cnt <= poisoned_packets_cnt_next;
-        end
-    end
-
-    /* register sent_np */
-    `ifdef ASYNC_RES
-    always @(posedge clk or negedge res_n) `else
-    always @(posedge clk) `endif
-    begin
-        if (!res_n)
-        begin
-            sent_np_cnt <= 64'h0;
-        end
-        else
-        begin
-
-                sent_np_cnt <= sent_np_cnt_next;
+            if((address[6:3]== 2) && write_en)
+            begin
+                control_irtry_to_send <= write_data[44:40];
+            end
+            if((address[6:3]== 2) && write_en)
+            begin
+                control_bit_slip_time <= write_data[55:48];
+            end
         end
     end
 
@@ -314,6 +308,22 @@ module hmc_controller_rf
         end
     end
 
+    /* register sent_np */
+    `ifdef ASYNC_RES
+    always @(posedge clk or negedge res_n) `else
+    always @(posedge clk) `endif
+    begin
+        if (!res_n)
+        begin
+            sent_np_cnt <= 64'h0;
+        end
+        else
+        begin
+
+                sent_np_cnt <= sent_np_cnt_next;
+        end
+    end
+
     /* register sent_r */
     `ifdef ASYNC_RES
     always @(posedge clk or negedge res_n) `else
@@ -327,6 +337,22 @@ module hmc_controller_rf
         begin
 
                 sent_r_cnt <= sent_r_cnt_next;
+        end
+    end
+
+    /* register poisoned_packets */
+    `ifdef ASYNC_RES
+    always @(posedge clk or negedge res_n) `else
+    always @(posedge clk) `endif
+    begin
+        if (!res_n)
+        begin
+            poisoned_packets_cnt <= 64'h0;
+        end
+        else
+        begin
+
+                poisoned_packets_cnt <= poisoned_packets_cnt_next;
         end
     end
 
@@ -368,35 +394,6 @@ module hmc_controller_rf
             end
         end
     end
-
-    /* register link_retries */
-    `ifdef ASYNC_RES
-    always @(posedge clk or negedge res_n) `else
-    always @(posedge clk) `endif
-    begin
-        if (!res_n)
-        begin
-        end
-        else
-        begin
-
-        end
-    end
-
-    /* register run_length_bit_flip */
-    `ifdef ASYNC_RES
-    always @(posedge clk or negedge res_n) `else
-    always @(posedge clk) `endif
-    begin
-        if (!res_n)
-        begin
-        end
-        else
-        begin
-
-        end
-    end
-
 
     `ifdef ASYNC_RES
     always @(posedge clk or negedge res_n) `else
@@ -447,22 +444,27 @@ module hmc_controller_rf
                 4'h2:
                 begin
                     read_data[0:0] <= control_p_rst_n;
-                    read_data[1:1] <= control_set_hmc_sleep;
-                    read_data[2:2] <= control_scrambler_disable;
-                    read_data[3:3] <= control_run_length_enable;
-                    read_data[13:4] <= control_rx_token_count;
-                    read_data[14:14] <= control_rsvd_control_1;
-                    read_data[19:15] <= control_irtry_received_threshold;
-                    read_data[24:20] <= control_irtry_to_send;
-                    read_data[32:25] <= control_bit_slip_time;
-                    read_data[35:33] <= control_first_cube_ID;
-                    read_data[63:36] <= 28'b0;
+                    read_data[1:1] <= control_hmc_init_cont_set;
+                    read_data[2:2] <= control_set_hmc_sleep;
+                    read_data[3:3] <= control_scrambler_disable;
+                    read_data[4:4] <= control_run_length_enable;
+                    read_data[7:5] <= control_first_cube_ID;
+                    read_data[8:8] <= control_debug_dont_send_tret;
+                    read_data[15:9] <= control_rsvd_control_0;
+                    read_data[25:16] <= control_rx_token_count;
+                    read_data[31:26] <= control_rsvd_control_1;
+                    read_data[36:32] <= control_irtry_received_threshold;
+                    read_data[39:37] <= control_rsvd_control_2;
+                    read_data[44:40] <= control_irtry_to_send;
+                    read_data[47:45] <= control_rsvd_control_3;
+                    read_data[55:48] <= control_bit_slip_time;
+                    read_data[63:56] <= 8'b0;
                     invalid_address <= 1'b0;
                     access_complete <= write_en || read_en;
                 end
                 4'h3:
                 begin
-                    read_data[63:0] <= poisoned_packets_cnt;
+                    read_data[63:0] <= sent_p_cnt;
                     invalid_address <= 1'b0;
                     access_complete <= write_en || read_en;
                 end
@@ -474,13 +476,13 @@ module hmc_controller_rf
                 end
                 4'h5:
                 begin
-                    read_data[63:0] <= sent_p_cnt;
+                    read_data[63:0] <= sent_r_cnt;
                     invalid_address <= 1'b0;
                     access_complete <= write_en || read_en;
                 end
                 4'h6:
                 begin
-                    read_data[63:0] <= sent_r_cnt;
+                    read_data[63:0] <= poisoned_packets_cnt;
                     invalid_address <= 1'b0;
                     access_complete <= write_en || read_en;
                 end
@@ -492,12 +494,19 @@ module hmc_controller_rf
                 end
                 4'h9:
                 begin
-                    read_data[31:0] <= link_retries_count;
+                    read_data[31:0] <= tx_link_retries_count;
                     read_data[63:32] <= 32'b0;
                     invalid_address <= 1'b0;
                     access_complete <= write_en || read_en;
                 end
                 4'ha:
+                begin
+                    read_data[31:0] <= errors_on_rx_count;
+                    read_data[63:32] <= 32'b0;
+                    invalid_address <= 1'b0;
+                    access_complete <= write_en || read_en;
+                end
+                4'hb:
                 begin
                     read_data[31:0] <= run_length_bit_flip_count;
                     read_data[63:32] <= 32'b0;
@@ -508,7 +517,7 @@ module hmc_controller_rf
                 begin
                     invalid_address <= read_en || write_en;
                     access_complete <= read_en || write_en;
-                end
+                end     
             endcase
         end
     end

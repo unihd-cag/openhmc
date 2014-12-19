@@ -35,7 +35,7 @@
  *   along with this source file.  If not, see <http://www.gnu.org/licenses/>.
  *
  *
- *  Module name: tx_crc_combine
+ *  Module name: sync_fifo_reg_stage
  *
  */
 

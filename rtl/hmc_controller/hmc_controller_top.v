@@ -42,68 +42,73 @@
 `default_nettype none
 
 module hmc_controller_top #(
+    //Define width of the datapath
     parameter LOG_FPW               = 2,
     parameter FPW                   = 4,
     parameter DWIDTH                = FPW*128,
-    parameter LOG_HMC_NUM_LANES     = 3,
-    parameter HMC_NUM_LANES         = 2**LOG_HMC_NUM_LANES,
-    parameter HMC_NUM_DATA_BYTES    = FPW*16,
+    //Define HMC interface width
+    parameter LOG_NUM_LANES         = 3,
+    parameter NUM_LANES             = 2**LOG_NUM_LANES,
+    parameter NUM_DATA_BYTES        = FPW*16,
+    //Define width of the register file
     parameter HMC_RF_WWIDTH         = 64,
     parameter HMC_RF_RWIDTH         = 64,
     parameter HMC_RF_AWIDTH         = 4,
-    parameter LOG_MAX_RTC           = 8
+    //Misc defines
+    parameter LOG_MAX_RTC           = 8,
+    //Synthesis params
+    parameter HMC_RX_AC_COUPLED     = 1
 ) (
     //----------------------------------
     //----SYSTEM INTERFACES
     //----------------------------------
-    input  wire clk_user,               //user clock
-    input  wire clk_hmc,
-    input  wire res_n_user,             //user logic res_n
-    input  wire res_n_hmc,
+    input  wire                         clk_user,
+    input  wire                         clk_hmc,
+    input  wire                         res_n_user,
+    input  wire                         res_n_hmc,
 
     //----------------------------------
     //----Connect AXI Ports
     //----------------------------------
     //From AXI to HMC Ctrl TX
-    input  wire                             s_axis_tx_TVALID,
-    output wire                             s_axis_tx_TREADY,
-    input  wire [DWIDTH-1:0]                s_axis_tx_TDATA,
-    input  wire [HMC_NUM_DATA_BYTES-1:0]    s_axis_tx_TUSER,
-    //From Ctrl RX to AXI
-    output wire                             m_axis_rx_TVALID,
-    input  wire                             m_axis_rx_TREADY,
-    output wire [DWIDTH-1:0]                m_axis_rx_TDATA,
-    output wire [HMC_NUM_DATA_BYTES-1:0]    m_axis_rx_TUSER,
+    input  wire                         s_axis_tx_TVALID,
+    output wire                         s_axis_tx_TREADY,
+    input  wire [DWIDTH-1:0]            s_axis_tx_TDATA,
+    input  wire [NUM_DATA_BYTES-1:0]    s_axis_tx_TUSER,
+    //From HMC Ctrl RX to AXI
+    output wire                         m_axis_rx_TVALID,
+    input  wire                         m_axis_rx_TREADY,
+    output wire [DWIDTH-1:0]            m_axis_rx_TDATA,
+    output wire [NUM_DATA_BYTES-1:0]    m_axis_rx_TUSER,
 
     //----------------------------------
     //----Connect Transceiver
     //----------------------------------
-    output wire  [DWIDTH-1:0]               phy_data_tx_link2phy,
-    input  wire  [DWIDTH-1:0]               phy_data_rx_phy2link,
-    output wire  [HMC_NUM_LANES-1:0]        phy_bit_slip,
-    input  wire                             phy_ready,
+    output wire  [DWIDTH-1:0]           phy_data_tx_link2phy,
+    input  wire  [DWIDTH-1:0]           phy_data_rx_phy2link,
+    output wire  [NUM_LANES-1:0]        phy_bit_slip,
+    input  wire                         phy_ready,
 
     //----------------------------------
     //----Connect HMC
     //----------------------------------
-    output wire                             P_RST_N,
-    output wire                             hmc_LxRXPS,
-    input  wire                             hmc_LxTXPS,
-    input  wire                             FERR_N, //Not connected
+    output wire                         P_RST_N,
+    output wire                         hmc_LxRXPS,
+    input  wire                         hmc_LxTXPS,
+    input  wire                         FERR_N, //Not connected
 
     //----------------------------------
     //----Connect RF
     //----------------------------------
-    input  wire  [HMC_RF_AWIDTH-1:0]        rf_address,
-    output wire  [HMC_RF_RWIDTH-1:0]        rf_read_data,
-    output wire                             rf_invalid_address,
-    output wire                             rf_access_complete,
-    input  wire                             rf_read_en,
-    input  wire                             rf_write_en,
-    input  wire  [HMC_RF_WWIDTH-1:0]        rf_write_data
+    input  wire  [HMC_RF_AWIDTH-1:0]    rf_address,
+    output wire  [HMC_RF_RWIDTH-1:0]    rf_read_data,
+    output wire                         rf_invalid_address,
+    output wire                         rf_access_complete,
+    input  wire                         rf_read_en,
+    input  wire                         rf_write_en,
+    input  wire  [HMC_RF_WWIDTH-1:0]    rf_write_data
 
     );
-
 
 //=====================================================================================================
 //-----------------------------------------------------------------------------------------------------
@@ -113,7 +118,7 @@ module hmc_controller_top #(
 
 // ----Assign AXI interface wires
 wire [3*FPW-1:0]            m_axis_rx_TUSER_temp;
-assign                      m_axis_rx_TUSER = {{HMC_NUM_DATA_BYTES-(3*FPW){1'b0}}, m_axis_rx_TUSER_temp};
+assign                      m_axis_rx_TUSER = {{NUM_DATA_BYTES-(3*FPW){1'b0}}, m_axis_rx_TUSER_temp};
 
 wire                        s_axis_tx_TREADY_n;
 assign s_axis_tx_TREADY =   ~s_axis_tx_TREADY_n;
@@ -123,37 +128,37 @@ assign m_axis_rx_TVALID =   ~m_axis_rx_TVALID_n;
 
 
 // ----TX FIFO Wires
-wire    [DWIDTH-1:0]    tx_d_in_data;
-wire                    tx_shift_out;
-wire                    tx_empty;
-wire                    tx_a_empty;
-wire    [3*FPW-1:0]     tx_d_in_ctrl;
+wire    [DWIDTH-1:0]        tx_d_in_data;
+wire                        tx_shift_out;
+wire                        tx_empty;
+wire                        tx_a_empty;
+wire    [3*FPW-1:0]         tx_d_in_ctrl;
 
 // ----RX FIFO Wires
-wire    [DWIDTH-1:0]    rx_d_in_data;
-wire                    rx_shift_in;
-wire                    rx_full;
-wire                    rx_a_full;
-wire    [3*FPW-1:0]     rx_d_in_ctrl;
+wire    [DWIDTH-1:0]        rx_d_in_data;
+wire                        rx_shift_in;
+wire                        rx_full;
+wire                        rx_a_full;
+wire    [3*FPW-1:0]         rx_d_in_ctrl;
 
 // ----RX LINK TO TX LINK
-wire                    rx2tx_link_retry;
-wire                    rx2tx_error_abort_mode;
-wire                    rx2tx_error_abort_mode_cleared;
-wire    [7:0]           rx2tx_hmc_frp;
-wire    [7:0]           rx2tx_rrp;
-wire    [7:0]           rx2tx_returned_tokens;
-wire    [LOG_FPW:0]     rx2tx_hmc_tokens_to_be_returned;
+wire                        rx2tx_link_retry;
+wire                        rx2tx_error_abort_mode;
+wire                        rx2tx_error_abort_mode_cleared;
+wire    [7:0]               rx2tx_hmc_frp;
+wire    [7:0]               rx2tx_rrp;
+wire    [7:0]               rx2tx_returned_tokens;
+wire    [LOG_FPW:0]         rx2tx_hmc_tokens_to_be_returned;
 
 // ----Register File
 //Counter
 wire                        rf_cnt_retry;
 wire                        rf_run_length_bit_flip;
-wire  [HMC_RF_WWIDTH-1:0]   rf_cnt_poisoned;
-wire  [HMC_RF_WWIDTH-1:0]   rf_cnt_p;
-wire  [HMC_RF_WWIDTH-1:0]   rf_cnt_np;
-wire  [HMC_RF_WWIDTH-1:0]   rf_cnt_r;
-wire  [HMC_RF_WWIDTH-1:0]   rf_cnt_rsp_rcvd;
+wire  [HMC_RF_RWIDTH-1:0]   rf_cnt_poisoned;
+wire  [HMC_RF_RWIDTH-1:0]   rf_cnt_p;
+wire  [HMC_RF_RWIDTH-1:0]   rf_cnt_np;
+wire  [HMC_RF_RWIDTH-1:0]   rf_cnt_r;
+wire  [HMC_RF_RWIDTH-1:0]   rf_cnt_rsp_rcvd;
 //Status
 wire [1:0]                  rf_link_status;
 wire [2:0]                  rf_hmc_init_status;
@@ -163,21 +168,24 @@ wire [9:0]                  rf_rx_tokens_av;
 wire                        rf_hmc_sleep;
 //Init Status
 wire                        rf_all_descramblers_aligned;
-wire [HMC_NUM_LANES-1:0]    rf_descrambler_aligned;
-wire [HMC_NUM_LANES-1:0]    rf_descrambler_part_aligned;
+wire [NUM_LANES-1:0]        rf_descrambler_aligned;
+wire [NUM_LANES-1:0]        rf_descrambler_part_aligned;
 //Control
 wire [7:0]                  rf_bit_slip_time;
-wire                        rf_link_width;
+wire                        rf_hmc_init_cont_set;
 wire                        rf_set_hmc_sleep;
+wire                        rf_dbg_dont_send_tret;
 //wire                        rf_warm_reset;
 wire                        rf_scrambler_disable;
-wire [HMC_NUM_LANES-1:0]    rf_lane_polarity;
-wire [HMC_NUM_LANES-1:0]    rf_descramblers_locked;
+wire [NUM_LANES-1:0]        rf_lane_polarity;
+wire [NUM_LANES-1:0]        rf_descramblers_locked;
 wire [9:0]                  rf_rx_buffer_rtc;
 wire                        rf_lane_reversal_detected;
 wire [4:0]                  rf_irtry_received_threshold;
 wire [4:0]                  rf_irtry_to_send;
 wire                        rf_run_length_enable;
+wire                        rf_run_length_enable_to_tx;
+assign                      rf_run_length_enable_to_tx = HMC_RX_AC_COUPLED ? rf_run_length_enable : 1'b0;
 wire [2:0]                  rf_first_cube_ID;
 
 //=====================================================================================================
@@ -188,7 +196,8 @@ wire [2:0]                  rf_first_cube_ID;
 //----------------------------------------------------------------------
 //-----TX-----TX-----TX-----TX-----TX-----TX-----TX-----TX-----TX-----TX
 //----------------------------------------------------------------------
-async_fifo #(
+
+hmc_async_fifo #(
     .DWIDTH(DWIDTH+(FPW*3)),
     .ENTRIES(8)
 ) fifo_tx_data (
@@ -198,7 +207,7 @@ async_fifo #(
     .si_res_n(res_n_user),
     .so_res_n(res_n_hmc),
 
-    //To Fifos
+    //From AXI-4 TX IF
     .d_in({s_axis_tx_TUSER[(FPW*3)-1:0],s_axis_tx_TDATA}),
     .shift_in(s_axis_tx_TVALID && s_axis_tx_TREADY),
     .full(s_axis_tx_TREADY_n),
@@ -215,9 +224,9 @@ tx_link #(
     .LOG_FPW(LOG_FPW),
     .FPW(FPW),
     .DWIDTH(DWIDTH),
-    .HMC_NUM_LANES(HMC_NUM_LANES),
+    .NUM_LANES(NUM_LANES),
     .HMC_PTR_SIZE(8),
-    .HMC_RF_WWIDTH(HMC_RF_WWIDTH)
+    .HMC_RF_RWIDTH(HMC_RF_RWIDTH)
 ) hmc_tx_link_I(
 
     //----------------------------------
@@ -279,11 +288,13 @@ tx_link #(
     //Control
     //.rf_warm_reset(rf_warm_reset),
     .rf_hmc_sleep_requested(rf_set_hmc_sleep),
+    .rf_dbg_dont_send_tret(rf_dbg_dont_send_tret),
+    .rf_hmc_init_cont_set(rf_hmc_init_cont_set),
     .rf_scrambler_disable(rf_scrambler_disable),
     .rf_rx_buffer_rtc(rf_rx_buffer_rtc),
     .rf_first_cube_ID(rf_first_cube_ID),
     .rf_irtry_to_send(rf_irtry_to_send),
-    .rf_run_length_enable(rf_run_length_enable)
+    .rf_run_length_enable(rf_run_length_enable_to_tx)
 );
 
 //----------------------------------------------------------------------
@@ -293,10 +304,10 @@ rx_link #(
     .LOG_FPW(LOG_FPW),
     .FPW(FPW),
     .DWIDTH(DWIDTH),
-    .LOG_HMC_NUM_LANES(LOG_HMC_NUM_LANES),
-    .HMC_NUM_LANES(HMC_NUM_LANES),
+    .LOG_NUM_LANES(LOG_NUM_LANES),
+    .NUM_LANES(NUM_LANES),
     .LOG_MAX_RTC(LOG_MAX_RTC),
-    .HMC_RF_WWIDTH(HMC_RF_WWIDTH)
+    .HMC_RF_RWIDTH(HMC_RF_RWIDTH)
 ) hmc_rx_link_I (
 
     //----------------------------------
@@ -349,14 +360,14 @@ rx_link #(
     .rf_tx_sends_ts1(rf_tx_init_status[1] && !rf_tx_init_status[0]),
     //Control
     .rf_bit_slip_time(rf_bit_slip_time),
+    .rf_hmc_init_cont_set(rf_hmc_init_cont_set),
     .rf_lane_polarity(rf_lane_polarity),
-    .rf_rx_buffer_rtc(rf_rx_buffer_rtc),
     .rf_scrambler_disable(rf_scrambler_disable),
     .rf_lane_reversal_detected(rf_lane_reversal_detected),
     .rf_irtry_received_threshold(rf_irtry_received_threshold)
 );
 
-async_fifo #(
+hmc_async_fifo #(
     .DWIDTH(DWIDTH+(FPW*3)),
     .ENTRIES(8)
 ) fifo_rx_data(
@@ -372,7 +383,7 @@ async_fifo #(
     .full(rx_full),
     .almost_full(rx_a_full),
 
-    //To RX HTAX Logic
+    //AXI-4 RX IF
     .d_out({m_axis_rx_TUSER_temp,m_axis_rx_TDATA}),
     .shift_out(m_axis_rx_TVALID && m_axis_rx_TREADY),
     .empty(m_axis_rx_TVALID_n),
@@ -383,60 +394,126 @@ async_fifo #(
 //----------------------------------------------------------------------
 //---Register File---Register File---Register File---Register File---Reg
 //----------------------------------------------------------------------
-hmc_controller_rf hmc_controller_rf_I (
-    //system IF
-    .res_n(res_n_hmc),
-    .clk(clk_hmc),
-    //rf access
-    .address(rf_address),
-    .read_data(rf_read_data),
-    .invalid_address(rf_invalid_address),
-    .access_complete(rf_access_complete),
-    .read_en(rf_read_en),
-    .write_en(rf_write_en),
-    .write_data(rf_write_data),
-    //status registers
-    .status_general_link_up_next(rf_link_status[1]),
-    .status_general_link_training_next(rf_link_status[0]),
-    .status_general_sleep_mode_next(rf_hmc_sleep),
-    .status_general_lanes_reversed_next(rf_lane_reversal_detected),
-    //.status_general_hmc_signals_fatal_error(~FERR_N),
-    .status_general_hmc_tokens_remaining_next(rf_hmc_tokens_av),
-    .status_general_rx_tokens_remaining_next(rf_rx_tokens_av),
-    .status_general_lane_polarity_reversed_next(rf_lane_polarity),
-    .status_general_phy_ready_next(phy_ready),
+//Instantiate register file depending on the number of lanes
+generate 
+    if(NUM_LANES==8) begin : register_file_8x
+        hmc_controller_8x_rf hmc_controller_rf_I (
+            //system IF
+            .res_n(res_n_hmc),
+            .clk(clk_hmc),
+            //rf access
+            .address(rf_address),
+            .read_data(rf_read_data),
+            .invalid_address(rf_invalid_address),
+            .access_complete(rf_access_complete),
+            .read_en(rf_read_en),
+            .write_en(rf_write_en),
+            .write_data(rf_write_data),
+            //status registers
+            .status_general_link_up_next(rf_link_status[1]),
+            .status_general_link_training_next(rf_link_status[0]),
+            .status_general_sleep_mode_next(rf_hmc_sleep),
+            .status_general_lanes_reversed_next(rf_lane_reversal_detected),
+            //.status_general_hmc_signals_fatal_error(~FERR_N),
+            .status_general_hmc_tokens_remaining_next(rf_hmc_tokens_av),
+            .status_general_rx_tokens_remaining_next(rf_rx_tokens_av),
+            .status_general_lane_polarity_reversed_next(rf_lane_polarity),
+            .status_general_phy_ready_next(phy_ready),
 
-    //init status
-    .status_init_lane_descramblers_locked_next(rf_descramblers_locked),
-    .status_init_descrambler_part_aligned_next(rf_descrambler_part_aligned),
-    .status_init_descrambler_aligned_next(rf_descrambler_aligned),
-    .status_init_all_descramblers_aligned_next(rf_all_descramblers_aligned),
-    .status_init_tx_init_status_next(rf_tx_init_status),
-    .status_init_hmc_init_TS1_next(rf_hmc_init_status[0]),
+            //init status
+            .status_init_lane_descramblers_locked_next(rf_descramblers_locked),
+            .status_init_descrambler_part_aligned_next(rf_descrambler_part_aligned),
+            .status_init_descrambler_aligned_next(rf_descrambler_aligned),
+            .status_init_all_descramblers_aligned_next(rf_all_descramblers_aligned),
+            .status_init_tx_init_status_next(rf_tx_init_status),
+            .status_init_hmc_init_TS1_next(rf_hmc_init_status[0]),
 
-    //counters
-    .sent_np_cnt_next(rf_cnt_np),
-    .sent_p_cnt_next(rf_cnt_p),
-    .sent_r_cnt_next(rf_cnt_r),
-    .poisoned_packets_cnt_next(rf_cnt_poisoned),
-    .rcvd_rsp_cnt_next(rf_cnt_rsp_rcvd),
+            //counters
+            .sent_np_cnt_next(rf_cnt_np),
+            .sent_p_cnt_next(rf_cnt_p),
+            .sent_r_cnt_next(rf_cnt_r),
+            .poisoned_packets_cnt_next(rf_cnt_poisoned),
+            .rcvd_rsp_cnt_next(rf_cnt_rsp_rcvd),
 
-    //Single bit counter
-    .link_retries_count_countup(rf_cnt_retry),
-    .run_length_bit_flip_count_countup(rf_run_length_bit_flip),
+            //Single bit counter
+            .tx_link_retries_count_countup(rf_cnt_retry),
+            .errors_on_rx_count_countup(rx2tx_error_abort_mode_cleared),
+            .run_length_bit_flip_count_countup(rf_run_length_bit_flip),
 
-    //control
-    .control_set_hmc_sleep(rf_set_hmc_sleep),
-    //.control_set_warm_reset(rf_warm_reset),
-    .control_scrambler_disable(rf_scrambler_disable),
-    .control_bit_slip_time(rf_bit_slip_time),
-    .control_p_rst_n(P_RST_N),
-    .control_rx_token_count(rf_rx_buffer_rtc),
-    .control_irtry_received_threshold(rf_irtry_received_threshold),
-    .control_irtry_to_send(rf_irtry_to_send),
-    .control_run_length_enable(rf_run_length_enable),
-    .control_first_cube_ID(rf_first_cube_ID)
-);
+            //control
+            .control_set_hmc_sleep(rf_set_hmc_sleep),
+            //.control_set_warm_reset(rf_warm_reset),
+            .control_hmc_init_cont_set(rf_hmc_init_cont_set),
+            .control_debug_dont_send_tret(rf_dbg_dont_send_tret),
+            .control_scrambler_disable(rf_scrambler_disable),
+            .control_bit_slip_time(rf_bit_slip_time),
+            .control_p_rst_n(P_RST_N),
+            .control_rx_token_count(rf_rx_buffer_rtc),
+            .control_irtry_received_threshold(rf_irtry_received_threshold),
+            .control_irtry_to_send(rf_irtry_to_send),
+            .control_run_length_enable(rf_run_length_enable),
+            .control_first_cube_ID(rf_first_cube_ID)
+        );
+    end else begin  : register_file_16x
+        hmc_controller_16x_rf hmc_controller_rf_I (
+            //system IF
+            .res_n(res_n_hmc),
+            .clk(clk_hmc),
+            //rf access
+            .address(rf_address),
+            .read_data(rf_read_data),
+            .invalid_address(rf_invalid_address),
+            .access_complete(rf_access_complete),
+            .read_en(rf_read_en),
+            .write_en(rf_write_en),
+            .write_data(rf_write_data),
+            //status registers
+            .status_general_link_up_next(rf_link_status[1]),
+            .status_general_link_training_next(rf_link_status[0]),
+            .status_general_sleep_mode_next(rf_hmc_sleep),
+            .status_general_lanes_reversed_next(rf_lane_reversal_detected),
+            //.status_general_hmc_signals_fatal_error(~FERR_N),
+            .status_general_hmc_tokens_remaining_next(rf_hmc_tokens_av),
+            .status_general_rx_tokens_remaining_next(rf_rx_tokens_av),
+            .status_general_lane_polarity_reversed_next(rf_lane_polarity),
+            .status_general_phy_ready_next(phy_ready),
+
+            //init status
+            .status_init_lane_descramblers_locked_next(rf_descramblers_locked),
+            .status_init_descrambler_part_aligned_next(rf_descrambler_part_aligned),
+            .status_init_descrambler_aligned_next(rf_descrambler_aligned),
+            .status_init_all_descramblers_aligned_next(rf_all_descramblers_aligned),
+            .status_init_tx_init_status_next(rf_tx_init_status),
+            .status_init_hmc_init_TS1_next(rf_hmc_init_status[0]),
+
+            //counters
+            .sent_np_cnt_next(rf_cnt_np),
+            .sent_p_cnt_next(rf_cnt_p),
+            .sent_r_cnt_next(rf_cnt_r),
+            .poisoned_packets_cnt_next(rf_cnt_poisoned),
+            .rcvd_rsp_cnt_next(rf_cnt_rsp_rcvd),
+
+            //Single bit counter
+            .tx_link_retries_count_countup(rf_cnt_retry),
+            .errors_on_rx_count_countup(rx2tx_error_abort_mode_cleared),
+            .run_length_bit_flip_count_countup(rf_run_length_bit_flip),
+
+            //control
+            .control_set_hmc_sleep(rf_set_hmc_sleep),
+            //.control_set_warm_reset(rf_warm_reset),
+            .control_hmc_init_cont_set(rf_hmc_init_cont_set),
+            .control_debug_dont_send_tret(rf_dbg_dont_send_tret),
+            .control_scrambler_disable(rf_scrambler_disable),
+            .control_bit_slip_time(rf_bit_slip_time),
+            .control_p_rst_n(P_RST_N),
+            .control_rx_token_count(rf_rx_buffer_rtc),
+            .control_irtry_received_threshold(rf_irtry_received_threshold),
+            .control_irtry_to_send(rf_irtry_to_send),
+            .control_run_length_enable(rf_run_length_enable),
+            .control_first_cube_ID(rf_first_cube_ID)
+        );       
+    end 
+endgenerate
 
 endmodule
 

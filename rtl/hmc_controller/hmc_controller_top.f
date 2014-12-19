@@ -24,10 +24,11 @@ ${OPENHMC_PATH}/rtl/hmc_controller/crc/crc_128_init.v
 ${OPENHMC_PATH}/rtl/hmc_controller/crc/crc_accu.v
 
 ####Register File
-${OPENHMC_PATH}/rtl/hmc_controller/register_file/hmc_controller_rf.v
+${OPENHMC_PATH}/rtl/hmc_controller/register_file/hmc_controller_8x_rf.v
+${OPENHMC_PATH}/rtl/hmc_controller/register_file/hmc_controller_16x_rf.v
 
 ####Building blocks
 -f ${OPENHMC_PATH}/rtl/building_blocks/fifos/sync/sync_fifos.f
-${OPENHMC_PATH}/rtl/building_blocks/fifos/async/async_fifo.v
+${OPENHMC_PATH}/rtl/building_blocks/fifos/async/hmc_async_fifo.v
 ${OPENHMC_PATH}/rtl/building_blocks/counter/counter48.v
-${OPENHMC_PATH}/rtl/building_blocks/rams/ram.v
+${OPENHMC_PATH}/rtl/building_blocks/rams/hmc_ram.v
