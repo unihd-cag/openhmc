@@ -45,7 +45,7 @@ module tx_link #(
     parameter LOG_FPW           = 2,
     parameter FPW               = 4,
     parameter DWIDTH            = 512,
-    parameter NUM_LANES     = 8,
+    parameter NUM_LANES         = 8,
     parameter HMC_PTR_SIZE      = 8,
     parameter HMC_RF_RWIDTH     = 64
 ) (
@@ -416,7 +416,7 @@ always @(*)  begin
 
     for(i_f=0;i_f<FPW;i_f=i_f+1) begin
 
-        if(data2rtc_stage_flit_is_hdr[i_f] && !is_flow(data2rtc_stage_flit[i_f])) begin
+        if(data2rtc_stage_flit_is_hdr[i_f] && data2rtc_stage_flit_is_valid[i_f] && !is_flow(data2rtc_stage_flit[i_f])) begin
 
             if(cmd_type(data2rtc_stage_flit[i_f]) == PKT_READ ||
                cmd_type(data2rtc_stage_flit[i_f]) == PKT_MODE_READ ) begin
@@ -807,7 +807,7 @@ else begin
 
     endcase
 
-    if(!rf_hmc_init_cont_set) begin
+    if(!rf_hmc_init_cont_set) begin         //TODO debug only ?
         state <= TX_NULL_1;
         num_init_nulls_sent <= {6{1'b0}};
         rtc_rx_initialize   <= 1'b1;
@@ -851,31 +851,22 @@ always @(*) begin
     rf_sent_r_comb   = {LOG_FPW+1{1'b0}};
 
     for(i_f=0;i_f<FPW;i_f=i_f+1)begin
-        if(data2rtc_stage_flit_is_hdr[i_f])begin
+        if(data2rtc_stage_flit_is_hdr[i_f] && data2rtc_stage_flit_is_valid[i_f])begin
         //split into independent cases to avoid dependencies
         //Instead of comparing the entire cmd field, try to reduce logic effort
 
-            if( data2rtc_stage_flit[i_f][3] ^ data2rtc_stage_flit[i_f][4]
-            //All non-posted types have either bit 3 or 4 in the cmd set, equal to:
-                //cmd_type(data2rtc_stage_flit[i_f])==PKT_READ ||
-                //cmd_type(data2rtc_stage_flit[i_f])==PKT_WRITE ||
-                //cmd_type(data2rtc_stage_flit[i_f])==PKT_MISC_WRITE ||
-                //cmd_type(data2rtc_stage_flit[i_f])==PKT_MODE_READ
-              ) begin
-                //it is a non posted transaction
+            //All non-posted types have either bit 3 or 4 in the cmd set:
+            if( data2rtc_stage_flit[i_f][3] ^ data2rtc_stage_flit[i_f][4] ) begin
                 rf_sent_np_comb = rf_sent_np_comb + {{LOG_FPW{1'b0}},1'b1};
             end
 
-            if(data2rtc_stage_flit[i_f][4] && data2rtc_stage_flit[i_f][5]
-            //Only reads have bit 4 and 5 set, equal to:
-            //cmd_type(data2rtc_stage_flit[i_f])==PKT_READ
-            ) begin
-                //read
+            //Only reads have bit 4 and 5 set:
+            if(data2rtc_stage_flit[i_f][4] && data2rtc_stage_flit[i_f][5] ) begin
                 rf_sent_r_comb = rf_sent_r_comb + {{LOG_FPW{1'b0}},1'b1};
             end
 
+            //Otherwise it's a posted write
             if(cmd_type(data2rtc_stage_flit[i_f])==PKT_P_WRITE)begin
-                // posted write
                 rf_sent_p_comb = rf_sent_p_comb + {{LOG_FPW{1'b0}},1'b1};
             end
 
@@ -1302,8 +1293,6 @@ generate
         );
     end
 endgenerate
-
-
 
 endmodule
 `default_nettype wire

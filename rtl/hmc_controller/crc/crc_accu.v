@@ -81,6 +81,7 @@ if (!res_n) begin
     crc    <= {32{1'b0}};
 end
 else begin
+    crc    <= {32{1'b0}};
     for(i_f=0;i_f<FPW;i_f=i_f+1) begin
         if(valid[i_f])begin
             crc    <= crc_temp[i_f+1];

@@ -154,37 +154,29 @@ reg [NUM_LANES-1:0]     descrambler_aligned;
 assign                  rf_descrambler_part_aligned = descrambler_part_aligned;
 assign                  rf_descrambler_aligned      = descrambler_aligned;
 
-//DATA and REORDERING: Pipeline d_in for timing closure
+//DATA and REORDERING
 wire [WIDTH_PER_LANE-1:0]   descrambled_data_on_lane    [NUM_LANES-1:0];
-reg  [DWIDTH-1:0]           d_in;
-reg  [DWIDTH-1:0]           d_in_init;
-wire [DWIDTH-1:0]           d_in_temp;
+wire  [DWIDTH-1:0]          d_in;
 wire [128-1:0]              d_in_flit                   [FPW-1:0];
-wire [128-1:0]              d_in_flit_init              [FPW-1:0];
 
 //Valid FLIT sources. A FLIT is valid when the command is not zero
 wire [FPW-1:0]              valid_flit_src;     //bit0 = flit0, ...
-wire [FPW-1:0]              valid_flit_src_init;//bit0 = flit0, ...
 
 generate
 
     //-- Apply lane reversal if detected
     for(n = 0; n < NUM_LANES; n = n + 1) begin : apply_lane_reversal
         for(w = 0; w < WIDTH_PER_LANE; w = w + 1) begin
-            assign d_in_temp[w*NUM_LANES+n] = rf_lane_reversal_detected ? descrambled_data_on_lane[NUM_LANES-1-n][w] : descrambled_data_on_lane[n][w];
+            assign d_in[w*NUM_LANES+n] = rf_lane_reversal_detected ? descrambled_data_on_lane[NUM_LANES-1-n][w] : descrambled_data_on_lane[n][w];
         end
     end
 
 
     for(f = 0; f < FPW; f = f + 1) begin : reorder_input_data
-        //-- Reorder the descrambled data for the init sequence
-        assign d_in_flit_init[f] = d_in_init[128-1+(f*128):f*128];
         //-- Reorder the descrambled data to FLITs
-        assign d_in_flit[f]      = d_in[128-1+(f*128):f*128];
+        assign d_in_flit[f]       = d_in[128-1+(f*128):f*128];
         //-- Generate valid flit positions for the init sequence
-        assign valid_flit_src_init[f]   =   (d_in_flit_init[f] == 0) ? 1'b0 : 1'b1;
-        //-- Generate valid flit positions for the init sequence
-        assign valid_flit_src[f]        =   (cmd(d_in_flit[f]) == 0) ? 1'b0 : 1'b1;
+        assign valid_flit_src[f]  = (d_in_flit[f] == 0) ? 1'b0 : 1'b1;
     end
 
 endgenerate
@@ -479,12 +471,12 @@ else begin
     end
 
     if((rf_hmc_init_status == HMC_DOWN) && &rf_descramblers_locked) begin
-        if(!valid_flit_src_init)
+        if(!valid_flit_src)
             rf_hmc_init_status <= HMC_NULL;
     end
 
     //When TX block sends ts1, start init process
-    if(rf_tx_sends_ts1 && &valid_flit_src_init) begin
+    if(rf_tx_sends_ts1 && &valid_flit_src) begin
         rf_hmc_init_status      <= HMC_TS1;
     end
 
@@ -525,8 +517,7 @@ else begin
                 end
 
             end else begin
-                // if(phy_rx_ready)
-                    init_wait_time <= init_wait_time -1;
+                init_wait_time <= init_wait_time -1;
             end
         // -------------------------------------------------------------------------SECOND NULL SEQUENCE
         end else begin  // now that all is synchronized continue with NULL and TRET
@@ -537,7 +528,7 @@ else begin
             end
 
             //when received NULLs again, init done (initial TRETs are treated as normal packets)
-            if(valid_flit_src_init == 0)begin
+            if(valid_flit_src == 0)begin
                 rf_link_status      <= LINK_UP;
                 rf_hmc_init_status  <= HMC_UP;
             end
@@ -549,27 +540,6 @@ end
 //========================================================================================================================================
 //------------------------------------------------------------------Packet Processing
 //========================================================================================================================================
-
-//==================================================================================
-//---------------------------------Register Input data after reordering and link_up
-//==================================================================================
-`ifdef ASYNC_RES
-always @(posedge clk or negedge res_n)  begin `else
-always @(posedge clk)  begin `endif
-if(!res_n) begin
-    d_in        <= {DWIDTH{1'b0}};
-    d_in_init   <= {DWIDTH{1'b0}};
-end else begin
-    if(link_is_up) begin
-        d_in        <= d_in_temp;
-        d_in_init   <= {DWIDTH{1'b0}};
-    end else begin
-        d_in        <= {DWIDTH{1'b0}};
-        d_in_init   <= d_in_temp;
-    end
-end
-end
-
 //==================================================================================
 //---------------------------------Detect HDR,Tail,Valid Flits and provide to CRC logic
 //==================================================================================
@@ -629,9 +599,11 @@ if(!res_n) begin
     data2crc <= {DWIDTH{1'b0}};
 
 end else begin
-    data2crc_hdr    <= data2crc_hdr_comb;
-    data2crc_tail   <= data2crc_tail_comb;
-    data2crc_valid  <= data2crc_valid_comb;
+    if(link_is_up) begin
+        data2crc_hdr    <= data2crc_hdr_comb;
+        data2crc_tail   <= data2crc_tail_comb;
+        data2crc_valid  <= data2crc_valid_comb;
+    end
 
     data2crc_payload_remain  <= data2crc_payload_remain_comb;
 
@@ -639,7 +611,7 @@ end else begin
         data2crc_lng_per_flit[i_f] <= data2crc_lng_per_flit_comb[i_f];
     end
 
-    data2crc      <= d_in;
+    data2crc  <= d_in;
 
 end
 end
@@ -683,7 +655,6 @@ end else begin
             flit_after_lng_check_is_error[i_f]  <= 1'b1;
         end
     end
-
 end
 end
 
@@ -829,7 +800,7 @@ end else begin
 
     tx_error_abort_mode_cleared <= 1'b0;
 
-    if(irtry_clear_trig ) begin
+    if(irtry_clear_trig /*|| !rf_hmc_init_cont_set*/) begin //TODO remove
         tx_error_abort_mode         <= 1'b0;
         tx_error_abort_mode_cleared <= 1'b1;
     end

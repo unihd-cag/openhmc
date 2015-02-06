@@ -42,6 +42,12 @@
 `default_nettype none
 
 module sync_fifo #(
+`ifdef CAG_ASSERTIONS
+        parameter DISABLE_EMPTY_ASSERT      = 0,
+        parameter DISABLE_FULL_ASSERT       = 0,
+        parameter DISABLE_SHIFT_OUT_ASSERT  = 0,
+        parameter DISABLE_XCHECK_ASSERT     = 0,
+`endif
         parameter DATASIZE                  = 8,
         parameter ADDRSIZE                  = 8,
         parameter GATE_SHIFT_IN             = 0,
@@ -257,6 +263,32 @@ hmc_ram #(
         .raddr(ra),
         .rdata(d_out_m2)
         );
+
+
+`ifdef CAG_ASSERTIONS
+    shift_in_and_full:          assert property (@(posedge clk) disable iff(!res_n) (shift_in |-> !full));
+
+    if (DISABLE_SHIFT_OUT_ASSERT == 0 && CHAIN_ENABLE == 0)
+        shift_out_and_empty:    assert property (@(posedge clk) disable iff(!res_n) (shift_out |-> !empty));
+
+    if (DISABLE_XCHECK_ASSERT == 0)
+    dout_known:                 assert property (@(posedge clk) disable iff(!res_n) (!empty |-> !$isunknown(d_out)));
+    if (DISABLE_XCHECK_ASSERT == 0)
+
+    final
+    begin
+        if (DISABLE_FULL_ASSERT == 0)
+        begin
+            full_set_assert:                assert (!full);
+        end
+
+        if (DISABLE_EMPTY_ASSERT == 0)
+        begin
+            empty_not_set_assert:           assert (empty);
+        end
+    end
+
+`endif // CAG_ASSERTIONS
 
 endmodule
 

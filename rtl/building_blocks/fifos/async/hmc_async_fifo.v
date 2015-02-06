@@ -43,7 +43,12 @@
 
 module hmc_async_fifo #(
         parameter DWIDTH                        = 8,
-        parameter ENTRIES                       = 2
+        parameter ENTRIES                       = 2,
+        parameter DISABLE_FULL_ASSERT           = 0,
+        parameter DISABLE_EMPTY_ASSERT          = 0,
+        parameter DISABLE_SHIFT_OUT_ASSERT      = 0,
+        parameter DISABLE_SHIFT_IN_ASSERT       = 0,
+        parameter DISABLE_SO_DATA_KNOWN_ASSERT  = 0
     ) (
         // interface for shift_in side
         input wire              si_clk,
@@ -250,6 +255,32 @@ module hmc_async_fifo #(
             thermo_wp_synced_1  <= thermo_wp_synced_0;
         end
     end
+
+
+`ifdef CAG_ASSERTIONS
+    shift_in_and_full:      assert property (@(posedge si_clk) disable iff(!si_res_n) (shift_in |-> !full));
+
+    if (DISABLE_SHIFT_OUT_ASSERT == 0)
+        shift_out_and_empty:    assert property (@(posedge so_clk) disable iff(!so_res_n) (shift_out |-> !empty));
+
+    if (DISABLE_SO_DATA_KNOWN_ASSERT == 0) begin
+        dout_known:             assert property (@(posedge so_clk) disable iff(!so_res_n) (!empty |-> !$isunknown(d_out)));
+    end
+
+    final
+    begin
+        if (DISABLE_FULL_ASSERT == 0)
+        begin
+            full_set_assert:                assert (!full);
+        end
+
+        if (DISABLE_EMPTY_ASSERT == 0)
+        begin
+            almost_empty_not_set_assert:    assert (almost_empty);
+            empty_not_set_assert:           assert (empty);
+        end
+    end
+`endif // CAG_ASSERTIONS
 
 endmodule
 
