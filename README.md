@@ -3,7 +3,10 @@ openhmc
 
 openHMC - an open source Hybrid Memory Cube Controller
 
-*** The openHMC website is currently unavailable. Please use the following contact data ***
+Website:
+http://ra.ziti.uni-heidelberg.de/openhmc
+
+Contact:
 openhmc@ziti.uni-heidelberg.de
 
 openHMC on LinkedIn:
