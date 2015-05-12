@@ -40,7 +40,6 @@
 `ifndef HMC_CHECK_SEQ
 `define HMC_CHECK_SEQ
 
-`include "config.h"
 
 class hmc_check_seq extends hmc_base_seq;
 
@@ -52,6 +51,7 @@ class hmc_check_seq extends hmc_base_seq;
 	`uvm_declare_p_sequencer(hmc_vseqr)
 
 	int timer;
+	int draintime = 200;
 
 	task body();
 		reg_hmc_controller_rf_status_general_c status;
@@ -75,19 +75,19 @@ class hmc_check_seq extends hmc_base_seq;
 		p_sequencer.rf_seqr_hmc.read_reg(sent_np);
 		p_sequencer.rf_seqr_hmc.read_reg(rcvd_rsp);
 
-		#1us;
+		#5us;
 
 		while(	((sent_np.fields.cnt_ != rcvd_rsp.fields.cnt_) ||
-				(status.fields.hmc_tokens_remaining_ != `HMC_TOKENS) ||
-				(status.fields.rx_tokens_remaining_ != `RX_TOKENS)) 
+				(status.fields.hmc_tokens_remaining_ != p_sequencer.link_cfg.hmc_tokens) ||
+				(status.fields.rx_tokens_remaining_ != p_sequencer.link_cfg.rx_tokens)) 
 				&&
-				(timer < 200)) begin
+				(timer < draintime)) begin
 			#1us;
 			p_sequencer.rf_seqr_hmc.read_reg(status);
 			p_sequencer.rf_seqr_hmc.read_reg(sent_np);
 			p_sequencer.rf_seqr_hmc.read_reg(rcvd_rsp);
-			`uvm_info(get_type_name(),$psprintf("RX token count in TX_LINK = %0d, should be %0d", status.fields.rx_tokens_remaining_, `RX_TOKENS),UVM_LOW)
-			`uvm_info(get_type_name(),$psprintf("HMC token count in TX_LINK = %0d, should be %0d", status.fields.hmc_tokens_remaining_, `HMC_TOKENS),UVM_LOW)
+			`uvm_info(get_type_name(),$psprintf("RX token count in TX_LINK = %0d, should be %0d", status.fields.rx_tokens_remaining_, p_sequencer.link_cfg.rx_tokens),UVM_LOW)
+			`uvm_info(get_type_name(),$psprintf("HMC token count in TX_LINK = %0d, should be %0d", status.fields.hmc_tokens_remaining_, p_sequencer.link_cfg.hmc_tokens),UVM_LOW)
 			`uvm_info(get_type_name(),$psprintf("sent = %0d non-posted packets, received %0d responses", sent_np.fields.cnt_, rcvd_rsp.fields.cnt_),UVM_LOW)
 			timer++;
 		end
@@ -101,17 +101,10 @@ class hmc_check_seq extends hmc_base_seq;
 
 		//-- ***REPORTS***
 		//-- Report Packet Counts
-		if(sent_np.fields.cnt_ != rcvd_rsp.fields.cnt_) begin
+		if( timer==draintime ) begin
 			`uvm_info(get_type_name(),$psprintf("Counted: %0d NP Requests, %0d Responses", sent_np.fields.cnt_, rcvd_rsp.fields.cnt_), UVM_LOW)
-		end
-
-		if(status.fields.hmc_tokens_remaining_ != `HMC_TOKENS) begin
-			`uvm_fatal(get_type_name(),$psprintf("Responder token count in TX_LINK = %0d, should be %0d", status.fields.hmc_tokens_remaining_, `HMC_TOKENS))
-		end
-
-		//-- Report Tokens in RX Link
-		if(status.fields.rx_tokens_remaining_ != `RX_TOKENS) begin
-			`uvm_fatal(get_type_name(),$psprintf("Requester token count in TX_LINK = %0d, should be %0d", status.fields.rx_tokens_remaining_, `RX_TOKENS))
+			`uvm_info(get_type_name(),$psprintf("Responder token count in TX_LINK = %0d, should be %0d", status.fields.hmc_tokens_remaining_, p_sequencer.link_cfg.hmc_tokens), UVM_LOW)
+			`uvm_fatal(get_type_name(),$psprintf("Requester token count in TX_LINK = %0d, should be %0d", status.fields.rx_tokens_remaining_, p_sequencer.link_cfg.rx_tokens))		
 		end
 
 	endtask : body

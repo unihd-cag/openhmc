@@ -42,9 +42,11 @@
 `default_nettype none
 
 module rx_lane_logic #(
-    parameter DWIDTH            = 512,
-    parameter NUM_LANES         = 8,
-    parameter LANE_DWIDTH       = (DWIDTH/NUM_LANES)
+    parameter DWIDTH             = 512,
+    parameter NUM_LANES          = 8,
+    parameter LANE_DWIDTH        = (DWIDTH/NUM_LANES),
+    parameter CTRL_LANE_POLARITY = 1,
+    parameter BITSLIP_SHIFT_RIGHT= 1
 ) (
 
     //----------------------------------
@@ -65,30 +67,45 @@ module rx_lane_logic #(
 
 );
 
-reg     [LANE_DWIDTH-1:0]       scrambled_data_in_reg;
-
 wire    [LANE_DWIDTH-1:0]       descrambled_data_out_tmp;
-assign descrambled_data_out     = descrambler_disable ? scrambled_data_in_reg : descrambled_data_out_tmp;
-
+wire    [LANE_DWIDTH-1:0]       data_2_descrambler;
 wire                            descrambler_locked_tmp;
 assign descrambler_locked       = descrambler_disable ? 1'b1 : descrambler_locked_tmp;
+
+
 
 //=====================================================================================================
 //-----------------------------------------------------------------------------------------------------
 //---------ACTUAL LOGIC STARTS HERE--------------------------------------------------------------------
 //-----------------------------------------------------------------------------------------------------
 //=====================================================================================================
-`ifdef ASYNC_RES
-always @(posedge clk or negedge res_n)  begin `else
-always @(posedge clk)  begin `endif
+generate 
+    if(CTRL_LANE_POLARITY==1) begin
 
-if(!res_n) begin
-    scrambled_data_in_reg   <=  {LANE_DWIDTH{1'b0}};
-end
-else begin
-    scrambled_data_in_reg       <= scrambled_data_in^{LANE_DWIDTH{lane_polarity}};
-end
-end
+        reg [LANE_DWIDTH-1:0] scrambled_data_in_reg;
+
+        `ifdef ASYNC_RES
+        always @(posedge clk or negedge res_n)  begin `else
+            always @(posedge clk)  begin `endif
+
+            if(!res_n) begin
+                scrambled_data_in_reg   <=  {LANE_DWIDTH{1'b0}};
+            end
+            else begin
+                scrambled_data_in_reg   <= scrambled_data_in^{LANE_DWIDTH{lane_polarity}};
+            end
+        end
+
+        assign data_2_descrambler   = scrambled_data_in_reg;
+        assign descrambled_data_out = descrambler_disable ? scrambled_data_in_reg : descrambled_data_out_tmp;
+
+    end else begin
+
+        assign data_2_descrambler   = scrambled_data_in;
+        assign descrambled_data_out = descrambler_disable ? scrambled_data_in : descrambled_data_out_tmp;
+
+    end
+endgenerate
 
 //=====================================================================================================
 //-----------------------------------------------------------------------------------------------------
@@ -98,13 +115,14 @@ end
 
 //Descrambler Init
     rx_descrambler #(
-        .DWIDTH(LANE_DWIDTH)
+        .DWIDTH(LANE_DWIDTH),
+        .BITSLIP_SHIFT_RIGHT(BITSLIP_SHIFT_RIGHT)
     ) descrambler_I (
         .clk(clk),
         .res_n(res_n),
         .bit_slip(bit_slip),
         .locked(descrambler_locked_tmp),
-        .data_in(scrambled_data_in_reg),
+        .data_in(data_2_descrambler),
         .data_out(descrambled_data_out_tmp)
     );
 

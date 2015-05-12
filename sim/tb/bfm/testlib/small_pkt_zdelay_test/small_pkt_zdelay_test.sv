@@ -36,64 +36,42 @@
  *
  *
  */
-`timescale 100ps/100ps
 
-module deserializer #(
-	parameter LOG_DWIDTH=7,
-	parameter DWIDTH=64
-)
-(
-	input wire clk,
-	input wire fast_clk,
-	input wire bit_slip,
-	input wire data_in,
-	output reg [DWIDTH-1:0] data_out
-);
+//
+//
+// small_pkt_zdelay_test test
+//
+//
 
-reg [DWIDTH-1:0] tmp_buffer;
-reg [DWIDTH-1:0] buffer;
-reg [DWIDTH-1:0] buffer2;
-reg [DWIDTH-1:0] buffer3;
-reg [LOG_DWIDTH-1:0] curr_bit = 'h0;
-reg bit_slip_done = 1'b0;
-reg [8:0] bit_slip_cnt=9'h0;
+// test description:
+//  add a description of the test here
 
-// SEQUENTIAL PROCESS
-always @ (posedge fast_clk)
-begin
-	if (!bit_slip || bit_slip_done) begin
-		if(curr_bit == DWIDTH-1) begin
-			curr_bit <= 0;
-		end else begin
-			curr_bit <= curr_bit + 1;
-		end
-	end
 
-	if (bit_slip && !bit_slip_done)
-		bit_slip_done = 1'b1;
+`ifndef small_pkt_zdelay_test_SV
+`define small_pkt_zdelay_test_SV
 
-	if (bit_slip_done && !bit_slip)
-		bit_slip_done = 1'b0;
+class small_pkt_zdelay_test extends hmc_base_test;
 
-	tmp_buffer[curr_bit] <= data_in;
-	if (|curr_bit == 1'b0)
-		buffer <= tmp_buffer;
-end
+	`uvm_component_utils(small_pkt_zdelay_test)
 
-always @ (posedge clk)
-begin
-	buffer2 <= buffer;
-	buffer3 <= buffer2;
 
-	if (bit_slip)
-		bit_slip_cnt = bit_slip_cnt + 1;
-	if (bit_slip_cnt < 63)
-		data_out <= buffer3;
-	else if (bit_slip_cnt < 127)
-		data_out <= buffer2;
-	else if (bit_slip_cnt < 191)
-		data_out <= buffer;
-end
+	function new(string name = "small_pkt_zdelay_test", uvm_component parent = null);
+		super.new(name,parent);
+	endfunction : new
 
-endmodule
 
+	virtual function void build_phase(uvm_phase phase);
+
+		uvm_config_db#(uvm_object_wrapper)::set(this,"hmc_tb0.v_seqr.run_phase","default_sequence",small_pkt_zdelay_test_seq::type_id::get());
+
+		super.build_phase(phase);
+
+	endfunction : build_phase
+	
+	task run_phase(uvm_phase phase);
+		phase.phase_done.set_drain_time(this, 1us);
+	endtask : run_phase
+
+endclass : small_pkt_zdelay_test
+
+`endif // small_pkt_zdelay_test_SV

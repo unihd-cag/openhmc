@@ -46,42 +46,44 @@
 `ifndef simple_test_SEQ_SV
 `define simple_test_SEQ_SV
 
-`include "config.h"
-
 class simple_test_seq extends hmc_base_seq;
+
+	rand int iterations;
+	
+	constraint iterations_c {
+		iterations >= 1;
+		iterations <= 1;
+	}
 
 	function new(string name="simple_test_seq");
 		super.new(name);
 	endfunction : new
 
 	hmc_init_seq init;
+	bfm_init_seq bfm;
 	hmc_check_seq check;
+	hmc_base_pkt_seq work;
 
 	`uvm_object_utils(simple_test_seq)
 	`uvm_declare_p_sequencer(hmc_vseqr)
-
+	
 	hmc_2_axi4_sequence #(.DATA_BYTES(`AXI4BYTES), .TUSER_WIDTH(`AXI4BYTES)) requests;
-	int np_tag;
-	rand bit hmc_command_np;
-	rand int flit_count;
 
 	virtual task body();
 
 		`uvm_info(get_type_name(), "starting simple_test_seq", UVM_NONE)
-
-		//-- write your test here
-
+		
+    	`uvm_do(bfm)
 		#1us;
         `uvm_do(init)
-        #1us;
+        #1us;	
 
+		repeat (iterations) 
+			randcase
+				1 : `uvm_do_with(work, {req_class == NON_POSTED;})
+				1 : `uvm_do_with(work, {req_class == POSTED;})
+		endcase
 
- 		`uvm_create_on(requests, p_sequencer.axi4_req_seqr)	//-- create a new sequence item 'requests' on sequencer
- 		requests.num_packets = `NUM_PACKETS;				//-- HMC packets to send 
- 		requests.max_pkts_per_cycle = `FPW;					//-- Set the maximum number of complete packets per AXI4 cycle
- 		`uvm_rand_send(requests)							//-- randomize and send the parametrize sequence item
-
-		#1us;
 		`uvm_info(get_type_name(), "simple_test_seq done", UVM_NONE)
 		`uvm_do(check)
 

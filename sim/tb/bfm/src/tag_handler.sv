@@ -61,8 +61,8 @@ class tag_handler  extends uvm_component;
 	
 	covergroup tags_used_cg;
 		TAGS_USED : coverpoint used_tag{
-			bins valid_tags [] = {[0:tag_count]};
-			bins illegal_tags = {[tag_count+1:$]};
+			bins valid_tags [] = {[0:tag_count-1]};
+			bins illegal_tags = {[tag_count:$]};
 			}
 	endgroup
 
@@ -160,7 +160,8 @@ class tag_handler  extends uvm_component;
 	endfunction : release_tag
 
 	function void write_hmc_rsp(input hmc_packet packet);
-		release_tag(packet.tag);
+		if (packet.command != HMC_ERROR_RESPONSE)
+			release_tag(packet.tag);
 	endfunction : write_hmc_rsp
 
 	function void idle_check();

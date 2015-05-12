@@ -36,29 +36,12 @@
 #
 #
 
-#Leave untouched
-+define+HMC_REQUESTER_IS_ACTIVE=0
-+define+HMC_RESPONDER_IS_ACTIVE=0
-+define+SIMULATION=1
-
 ###Include Sources
 #Behavioral serializer and routing models
-${OPENHMC_SIM}/tb/bfm/src/behavioral/deserializer.v
-${OPENHMC_SIM}/tb/bfm/src/behavioral/serializer.v
-${OPENHMC_SIM}/tb/bfm/src/behavioral/routing.v
+-f ${OPENHMC_SIM}/tb/bfm/src/serdes/behavioral/serdes_behavioral.f
 
-#openHMC controller
--f ${OPENHMC_PATH}/rtl/hmc_controller/hmc_controller_top.f
-+incdir+${OPENHMC_PATH}/rtl/include/
-
-#Micron BFM model
--f ${OPENHMC_SIM}/bfm/hmc_bfm.f
-
-#Include Register File and controller header
-+incdir+${OPENHMC_SIM}/tb/bfm/src/rgm/openhmc/
-+incdir+${OPENHMC_SIM}/tb/bfm/src/targets/
-
-#Source top TB and DUT
+#Source top TB, HW, and DUT
 -f ${OPENHMC_SIM}/tb/bfm/build/compile_tb_openhmc.f
+-f ${OPENHMC_SIM}/tb/bfm/build/compile_hw_openhmc.f
 ${OPENHMC_SIM}/tb/bfm/src/tb_top_bfm.sv
 ${OPENHMC_SIM}/tb/bfm/src/targets/dut_openhmc_behavioral_bfm.sv

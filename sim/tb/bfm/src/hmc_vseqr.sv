@@ -43,17 +43,39 @@
 class  hmc_vseqr extends uvm_sequencer;
 
 	// hmc_link_config link_config;
+	hmc_link_config link_cfg;
+	
+	
+	
+	cls_link_cfg hmc_link_cfg;
 
 	//-- references to testbench sequencers
     cag_rgm_sequencer rf_seqr_hmc;
 
 	hmc_2_axi4_sequencer #(.DATA_BYTES(`AXI4BYTES),.TUSER_WIDTH(`AXI4BYTES))  axi4_req_seqr;
 
-	`uvm_component_utils(hmc_vseqr)
-
+	`uvm_component_utils_begin(hmc_vseqr)
+		`uvm_field_object(link_cfg, UVM_DEFAULT)
+	`uvm_component_utils_end
+	
 	function new (string name = "hmc_virtual_sequencer", uvm_component parent);
 		super.new(name, parent);
+		
+		hmc_link_cfg = new();
 	endfunction : new
+	
+	
+	function void build_phase(uvm_phase phase);
+		super.build_phase(phase);
+		
+		if (!uvm_config_db#(hmc_link_config)::get(this, "", "link_cfg", link_cfg)) begin
+			uvm_report_fatal(get_type_name(), $psprintf("hmc_link_config not set via config_db"));
+		end
+		//link_cfg = hmc_link_config::type_id::create("link_cfg",this);
+		
+			
+	endfunction : build_phase
+	
 
 endclass : hmc_vseqr
 

@@ -141,9 +141,9 @@ class hmc_packet extends uvm_sequence_item;
 						(packet_length == 1 && (command & `HMC_TYPE_MASK) == HMC_FLOW_TYPE)
 		); }
 	constraint c_flit_delay {
-		flit_delay dist{0:/90, [1:8]:/8, [8:50]:/2  };
+		soft flit_delay dist{0:/90, [1:8]:/8, [8:200]:/2  };
 	}
-
+	
 	function new (string name = "hmc_packet");
 		super.new(name);
 	endfunction : new
@@ -157,7 +157,8 @@ class hmc_packet extends uvm_sequence_item;
 			`uvm_fatal(get_type_name(),$psprintf("post_randomize packet_length = %0d",packet_length))
 
 		`uvm_info("AXI Packet queued",$psprintf("%0s packet_length = %0d",command.name(), packet_length), UVM_HIGH)
-
+		
+		
 		if (packet_length < 2)
 			return;
 
@@ -165,6 +166,16 @@ class hmc_packet extends uvm_sequence_item;
 			randomize_flit_successful : assert (std::randomize(rand_flit));
 			payload.push_back(rand_flit);
 		end
+		if ((command == HMC_POSTED_DUAL_8B_ADDI)||
+			(command == HMC_DUAL_8B_ADDI)) begin
+			payload[0] [63:32] = 32'b0;
+			payload[0][127:96] = 32'b0;
+		end
+		
+		if ((command == HMC_MODE_WRITE)|| (command == HMC_MODE_READ)) begin
+			payload[0][127:32] = 96'b0;
+		end
+
 
     endfunction
 
@@ -256,12 +267,12 @@ class hmc_packet extends uvm_sequence_item;
 					HMC_IRTRY:		packer.pack_field ( {3'h0, 3'h0, 34'h0, 9'h0, duplicate_length[3:0], packet_length[3:0], 1'b0, command[5:0]}, 64);
 					default: uvm_report_fatal(get_type_name(), $psprintf("pack function called for a hmc_packet with an illegal FLOW type='h%0h!", command));
 				endcase
-			HMC_READ_TYPE:			packer.pack_field ( {cube_ID[2:0], 3'h0, address[33:0], tag[8:0], duplicate_length[3:0], packet_length[3:0], 1'b0, command[5:0]}, 64);
+			HMC_READ_TYPE:			packer.pack_field ( {cube_ID[2:0], 3'h0, 34'h0, tag[8:0], duplicate_length[3:0], packet_length[3:0], 1'b0, command[5:0]}, 64);
 			HMC_MODE_READ_TYPE:		packer.pack_field ( {cube_ID[2:0], 3'h0, address[33:0], tag[8:0], duplicate_length[3:0], packet_length[3:0], 1'b0, command[5:0]}, 64);
 			HMC_POSTED_WRITE_TYPE:	packer.pack_field ( {cube_ID[2:0], 3'h0, address[33:0], tag[8:0], duplicate_length[3:0], packet_length[3:0], 1'b0, command[5:0]}, 64);
 			HMC_WRITE_TYPE:			packer.pack_field ( {cube_ID[2:0], 3'h0, address[33:0], tag[8:0], duplicate_length[3:0], packet_length[3:0], 1'b0, command[5:0]}, 64);
 			HMC_POSTED_MISC_WRITE_TYPE:	packer.pack_field ( {cube_ID[2:0], 3'h0, address[33:0], tag[8:0], duplicate_length[3:0], packet_length[3:0], 1'b0, command[5:0]}, 64);
-			HMC_MISC_WRITE_TYPE:	packer.pack_field ( {cube_ID[2:0], 3'h0, address[33:0], tag[8:0], duplicate_length[3:0], packet_length[3:0], 1'b0, command[5:0]}, 64);
+			HMC_MISC_WRITE_TYPE:	packer.pack_field ( {cube_ID[2:0], 3'h0, 34'h0, tag[8:0], duplicate_length[3:0], packet_length[3:0], 1'b0, command[5:0]}, 64);
 			HMC_RESPONSE_TYPE:		packer.pack_field ( {22'h0, source_link_ID[2:0], 6'h0, return_tag[8:0], tag[8:0], duplicate_length[3:0], packet_length[3:0], 1'b0, command[5:0]}, 64);
 			default: uvm_report_fatal(get_type_name(), $psprintf("pack function called for a hmc_packet with an illegal command type='h%0h!", command));
 		endcase

@@ -53,23 +53,24 @@
  *  ation that shifts out on the data[0] side.
  *  Put otherwise: Polynomial 1+ x^(-14) + x^(-15) is equiv to
  *  x^15 + x^1 + x^0
- *  This parallelized version calculates the next DWIDTH steps of values for
+ *  This parallelized version calculates the next LANE_WIDTH steps of values for
  *  the LFSR.  These bits are used to scramble the parallel input, and to
- *  choose the next value of lfsr (lfsr_steps[DWIDTH-1]).
+ *  choose the next value of lfsr (lfsr_steps[LANE_WIDTH-1]).
  */
 
 `default_nettype none
 
 module tx_scrambler #(
-    parameter DWIDTH=16
+    parameter LANE_WIDTH = 16,
+    parameter HMC_RX_AC_COUPLED = 1
 )
 (
     input wire              clk,
     input wire              res_n,
-    input wire              load_lfsr,
+    input wire              disable_scrambler,
     input wire [14:0]       seed, // unique per lane
-    input wire [DWIDTH-1:0] data_in,
-    output reg [DWIDTH-1:0] data_out,
+    input wire [LANE_WIDTH-1:0] data_in,
+    output reg [LANE_WIDTH-1:0] data_out,
     input wire              rf_run_length_enable,
     output wire             rf_run_length_bit_flip
 );
@@ -79,29 +80,34 @@ module tx_scrambler #(
 //---------WIRING AND SIGNAL STUFF---------------------------------------------------------------------
 //-----------------------------------------------------------------------------------------------------
 //=====================================================================================================
-wire [DWIDTH-1:0]   data_out_tmp;
-wire [DWIDTH-1:0]   run_length_d_out;
-reg  [14:0]         lfsr; // LINEAR FEEDBACK SHIFT REGISTER
-wire [14:0]         lfsr_steps [DWIDTH-1:0]; // LFSR values for serial time steps
+wire [LANE_WIDTH-1:0]   data_out_tmp;
+wire [LANE_WIDTH-1:0]   run_length_d_out;
+reg  [14:0]             lfsr; // LINEAR FEEDBACK SHIFT REGISTER
+wire [14:0]             lfsr_steps [LANE_WIDTH-1:0]; // LFSR values for serial time steps
+reg                     seed_set;
 
 // SEQUENTIAL PROCESS
 `ifdef ASYNC_RES
 always @(posedge clk or negedge res_n)  begin `else
 always @(posedge clk)  begin `endif
     if (!res_n) begin
-        lfsr[14:0] <= seed;
-        data_out   <= {DWIDTH {1'b0}};
+        seed_set   <= 1'b0;
+        lfsr[14:0] <= 15'h0;
+        data_out   <= {LANE_WIDTH {1'b0}};
     end
     else
     begin
+        if(!seed_set) begin
+           lfsr[14:0] <= seed; 
+           seed_set   <= 1'b1;
+        end else begin   
+            if (disable_scrambler) begin
+                lfsr[14:0] <= 15'h0;
+            end else begin
+                lfsr[14:0] <= lfsr_steps[LANE_WIDTH-1];
+            end
+        end
         data_out <= run_length_d_out;
-        if (load_lfsr) begin
-            lfsr[14:0] <= seed;
-        end
-        else
-        begin
-            lfsr[14:0] <= lfsr_steps[DWIDTH-1];
-        end
     end
 end                 // serial shift right with left input
 
@@ -111,7 +117,7 @@ generate
 
     assign data_out_tmp [0] = data_in[0] ^ lfsr[0]; // single bit scrambled.
     assign lfsr_steps[0]    = { (lfsr[1] ^ lfsr[0]) , lfsr[14:1] }; // lfsr at next bit clock
-    for(j = 1; j < DWIDTH; j = j + 1) begin : scrambler_gen
+    for(j = 1; j < LANE_WIDTH; j = j + 1) begin : scrambler_gen
         assign data_out_tmp[j] = data_in[j] ^ lfsr_steps[j-1][0];
         assign lfsr_steps[j]   = { (lfsr_steps[j-1][1] ^ lfsr_steps[j-1][0]) , lfsr_steps[j-1][14:1] };
     end
@@ -123,18 +129,26 @@ endgenerate
 //-----------------------------------------------------------------------------------------------------
 //=====================================================================================================
 
-tx_run_length_limiter #(
-    .DWIDTH(DWIDTH)
-)
-run_length_limiter_I
-(
-    .clk(clk),
-    .res_n(res_n),
-    .enable(rf_run_length_enable),
-    .data_in(data_out_tmp),
-    .data_out(run_length_d_out),
-    .rf_bit_flip(rf_run_length_bit_flip)
-);
+generate
+    if(HMC_RX_AC_COUPLED==1) begin
+
+        tx_run_length_limiter #(
+            .LANE_WIDTH(LANE_WIDTH)
+        )
+        run_length_limiter_I
+        (
+            .clk(clk),
+            .res_n(res_n),
+            .enable(rf_run_length_enable),
+            .data_in(data_out_tmp),
+            .data_out(run_length_d_out),
+            .rf_bit_flip(rf_run_length_bit_flip)
+        );
+    end else begin
+        assign rf_run_length_bit_flip = 1'b0;
+        assign run_length_d_out = data_out_tmp;
+    end
+endgenerate
 
 endmodule
 

@@ -75,30 +75,40 @@
 `default_nettype none
 
 module rx_descrambler #(
-    parameter DWIDTH=16
+    parameter DWIDTH=16,
+    parameter BITSLIP_SHIFT_RIGHT=1
 )
 (
-    input wire clk,
-    input wire res_n,
-    input wire bit_slip,        // keep scrambler in sync with serializer
-    output reg locked,
+    input wire              clk,
+    input wire              res_n,
+    input wire              bit_slip,
+    output reg              locked,
     input wire [DWIDTH-1:0] data_in,
     output reg [DWIDTH-1:0] data_out
     
 );
 
-reg [14:0] lfsr; // LINEAR FEEDBACK SHIFT REGISTER
-wire [14:0] lfsr_steps [DWIDTH-1:0]; // LFSR values for serial time steps
-wire [14:0] calculated_seed;
+reg  [14:0]       lfsr;                    // LINEAR FEEDBACK SHIFT REGISTER
+wire [14:0]       lfsr_slipped;            // Temporary lfsr for bitslip
+wire [14:0]       lfsr_steps [DWIDTH-1:0]; // LFSR values for serial time steps
+wire [14:0]       calculated_seed;
 wire [DWIDTH-1:0] data_out_tmp;
+
+generate
+    if(BITSLIP_SHIFT_RIGHT==1) begin
+        assign lfsr_slipped = { (lfsr_steps[DWIDTH-1][1] ^ lfsr_steps[DWIDTH-1][0]) , lfsr_steps[DWIDTH-1][14:1] };
+    end else begin
+        assign lfsr_slipped = { lfsr_steps[DWIDTH-1][13:0], (lfsr_steps[DWIDTH-1][14] ^ lfsr_steps[DWIDTH-1][0])};
+    end
+endgenerate
 
 // SEQUENTIAL PROCESS
 `ifdef ASYNC_RES
 always @(posedge clk or negedge res_n)  begin `else
 always @(posedge clk)  begin `endif
     if (!res_n) begin
-        locked <= 1'b0;
-        lfsr <= 15'h0;
+        locked   <= 1'b0;
+        lfsr     <= 15'h0;
         data_out <= {DWIDTH {1'b0}};
     end else begin
 
@@ -111,10 +121,11 @@ always @(posedge clk)  begin `endif
                 locked <= 1'b1;
             end
         end else begin
-            if (bit_slip) // lfsr_steps[DWIDTH]
-                lfsr[14:0] <= { (lfsr_steps[DWIDTH-1][1] ^ lfsr_steps[DWIDTH-1][0]) , lfsr_steps[DWIDTH-1][14:1] };
-            else
-                lfsr[14:0] <= lfsr_steps[DWIDTH-1];
+            if (bit_slip) begin
+                lfsr <= lfsr_slipped;
+            end else begin
+                lfsr <= lfsr_steps[DWIDTH-1];
+            end
         end
     end
 end                 // serial shift right with left input
@@ -134,10 +145,10 @@ generate
     end
 
     assign data_out_tmp [0] = data_in[0] ^ lfsr[0]; // single bit scrambled
-    assign lfsr_steps[0] = { (lfsr[1] ^ lfsr[0]) , lfsr[14:1] }; // lfsr at next bit clock
+    assign lfsr_steps[0]    = { (lfsr[1] ^ lfsr[0]) , lfsr[14:1] }; // lfsr at next bit clock
     for(j = 1; j < DWIDTH; j = j + 1) begin : scrambler_gen
         assign data_out_tmp[j] = data_in[j] ^ lfsr_steps[j-1][0];
-        assign lfsr_steps[j] = { (lfsr_steps[j-1][1] ^ lfsr_steps[j-1][0]) , lfsr_steps[j-1][14:1] };
+        assign lfsr_steps[j]   = { (lfsr_steps[j-1][1] ^ lfsr_steps[j-1][0]) , lfsr_steps[j-1][14:1] };
     end
 endgenerate
 

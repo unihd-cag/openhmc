@@ -60,18 +60,19 @@ class axi4_stream_master_agent #(parameter DATA_BYTES = 16, parameter TUSER_WIDT
 
 	function void build_phase(uvm_phase phase);
 		super.build_phase(phase);
-		
+
 		if(uvm_config_db#(virtual interface axi4_stream_if  #(.DATA_BYTES(DATA_BYTES), .TUSER_WIDTH(TUSER_WIDTH)))::get(this, "", "vif",vif) ) begin
-			uvm_config_db#(virtual interface axi4_stream_if #(.DATA_BYTES(DATA_BYTES), .TUSER_WIDTH(TUSER_WIDTH)))::set(this, "driver","vif",vif);		
+			uvm_config_db#(virtual interface axi4_stream_if #(.DATA_BYTES(DATA_BYTES), .TUSER_WIDTH(TUSER_WIDTH)))::set(this, "driver","vif",vif);
 		end else begin
-			`uvm_fatal(get_type_name(),"vif is not set")	
+			`uvm_fatal(get_type_name(),"vif is not set")
 		end
-		
+
 		if (!uvm_config_db#(axi4_stream_config)::get(this, "", "axi4_stream_cfg", axi4_stream_cfg)) begin
 			uvm_report_fatal(get_type_name(), $psprintf("axi4_stream_cfg not set via config_db"));
 		end
-		if(axi4_stream_cfg.master_active == UVM_ACTIVE)begin
-			uvm_config_db#(axi4_stream_config)::set(this, "driver", "axi4_stream_cfg", axi4_stream_cfg);		// distribute axi4_stream_cfg to driver
+
+		if(axi4_stream_cfg.master_active == UVM_ACTIVE)begin	//-- distribute axi4_stream_cfg to driver
+			uvm_config_db#(axi4_stream_config)::set(this, "driver", "axi4_stream_cfg", axi4_stream_cfg);
 			driver        = axi4_stream_master_driver   #(.DATA_BYTES(DATA_BYTES), .TUSER_WIDTH(TUSER_WIDTH))::type_id::create("driver", this);
 			sequencer     = axi4_stream_master_sequencer#(.DATA_BYTES(DATA_BYTES), .TUSER_WIDTH(TUSER_WIDTH))::type_id::create("sequencer",this);
 		end

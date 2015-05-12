@@ -40,7 +40,13 @@
 
 if [ ! $OPENHMC_SIM ]
 then
-    echo "Please export the OPENHMC_SIM first"
+    echo "Please export OPENHMC_SIM first"
+    exit 1
+fi
+
+if [ ! $OPENHMC_PATH ]
+then
+    echo "Please export OPENHMC_PATH first"
     exit 1
 fi
 

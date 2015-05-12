@@ -45,8 +45,11 @@ class hmc_module_scb  extends uvm_scoreboard;
 
 	protected int hmc_rsp_packet_count = 0;
 	protected int hmc_req_packet_count = 0;
+	protected int hmc_error_response_count = 0;
 	protected int axi4_rsp_packet_count = 0;
 	protected int axi4_req_packet_count = 0;
+	protected int axi4_error_response_count = 0;
+	
 
 	
 
@@ -94,16 +97,17 @@ class hmc_module_scb  extends uvm_scoreboard;
 	function void hmc_2_axi4_compare(input hmc_packet expected, input hmc_packet packet);
 		int i;
 		hmc_packet request;
-
-		//-- Check the packet against the request stored in the axi4_np_requests map
-		label : assert (axi4_np_requests.exists(packet.tag))
-			else `uvm_fatal(get_type_name(),$psprintf("hmc_2_axi4_compare: Unexpected Response with tag %0x \n%s", packet.tag, packet.sprint()));
 		
-		//-- delete the previous sent request packet
-		request = axi4_np_requests[packet.tag].pop_front();
-		if (axi4_np_requests[packet.tag].size() == 0)
-			axi4_np_requests.delete(packet.tag);
-		
+		if (packet.command != HMC_ERROR_RESPONSE) begin //-- HMC_ERROR_RESPONSE has no label
+			//-- Check the packet against the request stored in the axi4_np_requests map
+			label : assert (axi4_np_requests.exists(packet.tag))
+				else `uvm_fatal(get_type_name(),$psprintf("hmc_2_axi4_compare: Unexpected Response with tag %0x \n%s", packet.tag, packet.sprint()));
+			
+			//-- delete the previous sent request packet
+			request = axi4_np_requests[packet.tag].pop_front();
+			if (axi4_np_requests[packet.tag].size() == 0)
+				axi4_np_requests.delete(packet.tag);
+		end
 		//-- check the hmc_packet
 		if (packet.command == HMC_WRITE_RESPONSE 
 				&& request.get_command_type() != HMC_WRITE_TYPE 
@@ -138,9 +142,16 @@ class hmc_module_scb  extends uvm_scoreboard;
 		if (expected.command != packet.command)
 			`uvm_fatal(get_type_name(),$psprintf("hmc_2_axi4_compare: Expected %s, got %s", expected.command.name(), packet.command.name()))
 
-		if (expected.packet_length != packet.packet_length)
-			`uvm_fatal(get_type_name(),$psprintf("hmc_2_axi4_compare: Packet length mismatch %0d != %0d ", expected.packet_length, packet.packet_length))
+		if (expected.tag != packet.tag) begin
+			`uvm_info(get_type_name(), $psprintf("Expected: %s. got: %s", expected.sprint(), packet.sprint() ), UVM_NONE)	
+			`uvm_fatal(get_type_name(),$psprintf("hmc_2_axi4_compare: Packet tag mismatch %0d != %0d ", expected.tag, packet.tag))
+		end	
 
+		if (expected.packet_length != packet.packet_length) begin
+			`uvm_info(get_type_name(), $psprintf("Expected: %s. got: %s", expected.sprint(), packet.sprint() ), UVM_NONE)	
+			`uvm_fatal(get_type_name(),$psprintf("hmc_2_axi4_compare: Packet length mismatch %0d != %0d ", expected.packet_length, packet.packet_length))
+		end
+		
 		if (expected.payload.size() != packet.payload.size())
 			`uvm_fatal(get_type_name(),$psprintf("hmc_2_axi4_compare: Payload size mismatch %0d != %0d", expected.payload.size(), packet.payload.size()))
 
@@ -158,8 +169,10 @@ class hmc_module_scb  extends uvm_scoreboard;
 		if (packet_type == HMC_FLOW_TYPE || packet_type == HMC_RESPONSE_TYPE)
 			`uvm_fatal(get_type_name(),$psprintf("axi4_2_hmc_compare: Unexpected Packet \n%s", packet.sprint()))
 
-		if (expected.command != packet.command)
+		if (expected.command != packet.command) begin
+			`uvm_info(get_type_name(), $psprintf("Expected: %s. got: %s", expected.sprint(), packet.sprint() ), UVM_NONE)	
 			`uvm_fatal(get_type_name(),$psprintf("axi4_2_hmc_compare: Expected %s, got %s", expected.command.name(), packet.command.name()))
+		end
 
 		if (expected.cube_ID != packet.cube_ID)
 			`uvm_fatal(get_type_name(),$psprintf("axi4_2_hmc_compare: cube_ID mismatch %0d != %0d", expected.cube_ID, packet.cube_ID))
@@ -170,6 +183,11 @@ class hmc_module_scb  extends uvm_scoreboard;
 		if (expected.packet_length != packet.packet_length)
 			`uvm_fatal(get_type_name(),$psprintf("axi4_2_hmc_compare: Packet length mismatch %0d != %0d", expected.packet_length, packet.packet_length))
 
+		if (expected.tag != packet.tag) begin
+			`uvm_info(get_type_name(), $psprintf("Expected: %s. got: %s", expected.sprint(), packet.sprint() ), UVM_NONE)	
+			`uvm_fatal(get_type_name(),$psprintf("axi4_2_hmc_compare: Packet tag mismatch %0d != %0d ", expected.tag, packet.tag))
+		end	
+		
 		if (expected.payload.size() != packet.payload.size())
 			`uvm_fatal(get_type_name(),$psprintf("axi4_2_hmc_compare: Payload size mismatch %0d != %0d", expected.payload.size(), packet.payload.size()))
 
@@ -182,10 +200,15 @@ class hmc_module_scb  extends uvm_scoreboard;
 	function void write_hmc_rsp(input hmc_packet packet);
 		hmc_packet expected;
 
-		hmc_rsp_packet_count++;
-		
-		`uvm_info(get_type_name(),$psprintf("hmc_rsp: received packet #%0d %s", hmc_rsp_packet_count, packet.command.name()), UVM_MEDIUM)
-		`uvm_info(get_type_name(),$psprintf("hmc_rsp: \n%s", packet.sprint()), UVM_HIGH)
+		if (packet.command != HMC_ERROR_RESPONSE) begin //TODO cover error response
+			hmc_rsp_packet_count++;
+			`uvm_info(get_type_name(),$psprintf("hmc_rsp: received packet #%0d %s", hmc_rsp_packet_count, packet.command.name()), UVM_MEDIUM)
+			`uvm_info(get_type_name(),$psprintf("hmc_rsp: \n%s", packet.sprint()), UVM_HIGH)
+		end else begin
+			hmc_error_response_count++;
+			`uvm_info(get_type_name(),$psprintf("hmc_error_rsp: received error response #%0d %s", hmc_error_response_count, packet.command.name()), UVM_MEDIUM)
+			`uvm_info(get_type_name(),$psprintf("hmc_error_rsp: \n%s", packet.sprint()), UVM_HIGH)
+		end
 
 		//-- check this packet later 
 		hmc_2_axi4.push_back(packet);
@@ -222,24 +245,26 @@ class hmc_module_scb  extends uvm_scoreboard;
 		 if (packet == null) begin
 		  `uvm_fatal(get_type_name(), $psprintf("packet is null"))
 		 end
-		 
-		axi4_rsp_packet_count++;
-
-		`uvm_info(get_type_name(),$psprintf("axi4_rsp: received packet #%0d %s", axi4_rsp_packet_count, packet.command.name()), UVM_MEDIUM)
-		`uvm_info(get_type_name(),$psprintf("axi4_rsp: \n%s", packet.sprint()), UVM_HIGH)
 
 		//-- compare with previous on the HMC side received response packet
 		expected = hmc_2_axi4.pop_front();
 		hmc_2_axi4_compare(expected, packet);
-		`uvm_info(get_type_name(),$psprintf("axi4_rsp: checked packet #%0d %s", axi4_rsp_packet_count, packet.command.name()), UVM_MEDIUM)
-		
-		//-- check if open request with tag is available
-		if (used_tags[packet.tag] == 1'b1) begin
-			used_tags[packet.tag] =  1'b0;
+		if (packet.command != HMC_ERROR_RESPONSE) begin //TODO cover error response
+			axi4_rsp_packet_count++;
+
+			`uvm_info(get_type_name(),$psprintf("axi4_rsp: received packet #%0d %s", axi4_rsp_packet_count, packet.command.name()), UVM_MEDIUM)
+			`uvm_info(get_type_name(),$psprintf("axi4_rsp: \n%s", packet.sprint()), UVM_HIGH)
+			//-- check if open request with tag is available
+			if (used_tags[packet.tag] == 1'b1) begin
+				used_tags[packet.tag] =  1'b0;
+			end else begin
+				`uvm_fatal(get_type_name(),$psprintf("Packet with Tag %0d was not requested", packet.tag))
+			end
 		end else begin
-			`uvm_fatal(get_type_name(),$psprintf("Packet with Tag %0d was not requested", packet.tag))
+			axi4_error_response_count++;
+			`uvm_info(get_type_name(),$psprintf("axi4_error_rsp: received error response #%0d %s", axi4_error_response_count, packet.command.name()), UVM_MEDIUM)
+			`uvm_info(get_type_name(),$psprintf("axi4_error_rsp: \n%s", packet.sprint()), UVM_HIGH)
 		end
-		
 	endfunction :write_axi4_hmc_rsp
 
 
@@ -317,6 +342,7 @@ class hmc_module_scb  extends uvm_scoreboard;
 		`uvm_info(get_type_name(),$psprintf("axi4_rsp_count %0d", axi4_rsp_packet_count), UVM_NONE)
 		`uvm_info(get_type_name(),$psprintf("hmc_req_count %0d",  hmc_req_packet_count),  UVM_NONE)
 		`uvm_info(get_type_name(),$psprintf("hmc_rsp_count %0d",  hmc_rsp_packet_count),  UVM_NONE)
+		`uvm_info(get_type_name(),$psprintf("Error response count %0d", axi4_error_response_count ),  UVM_NONE)
 	endfunction : report_phase
 
 endclass : hmc_module_scb

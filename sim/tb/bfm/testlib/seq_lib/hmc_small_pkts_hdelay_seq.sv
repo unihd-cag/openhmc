@@ -36,29 +36,30 @@
  *
  *
  */
+`ifndef SMALL_PKTS_HDELAY_SEQ
+`define SMALL_PKTS_HDELAY_SEQ
 
-`timescale 100ps/100ps
+class hmc_small_pkts_hdelay_seq extends hmc_small_pkts_seq;
+	
+	constraint high_delay {
+		min_flit_delay >= 90;
+		max_flit_delay <= 200;
+	}
+	
+	constraint small_pkts_c {
+		max_packet_length == 2;
+	}
+	
 
-module routing #(
-	parameter LOG_DELAY=6
-)
-(
-	input wire clk,
-	input wire data_in,
-	input wire [LOG_DELAY-1:0] delay_in,
-	input wire polarity_reverse_in,
-	output wire data_out
-);
+	`uvm_object_utils(hmc_small_pkts_hdelay_seq)	
+	
+	function new(string name="hmc_small_pkts_hdelay_seq");
+		super.new(name);
+	endfunction : new
+	
+	
+	
+endclass : hmc_small_pkts_hdelay_seq
 
-reg [2**(LOG_DELAY+1)-1:0] wire_delay;
 
-// SEQUENTIAL PROCESS
-always @ (posedge clk)
-begin
-	wire_delay <= {wire_delay[2**(LOG_DELAY+1)-2:0], data_in^polarity_reverse_in};
-end 
-
-assign data_out = wire_delay[delay_in+2**LOG_DELAY];
-
-endmodule
-
+`endif //SMALL_PKTS_HDELAY_SEQ

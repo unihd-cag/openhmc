@@ -52,13 +52,15 @@ class axi4_stream_monitor #(parameter DATA_BYTES = 16, parameter TUSER_WIDTH = 1
 
 	uvm_analysis_port #(axi4_stream_valid_cycle #(.DATA_BYTES(DATA_BYTES), .TUSER_WIDTH(TUSER_WIDTH))) 	item_collected_port;
 
+	
 	`uvm_component_param_utils(axi4_stream_monitor #(.DATA_BYTES(DATA_BYTES), .TUSER_WIDTH(TUSER_WIDTH)))
-
-		
+	
 	
 	function new ( string name="axi4_stream_monitor", uvm_component parent );
 		super.new(name, parent);
+
 		item_collected_port = new("item_collected_port", this);
+
 	endfunction : new
 
 	function void build_phase(uvm_phase phase);
@@ -69,12 +71,13 @@ class axi4_stream_monitor #(parameter DATA_BYTES = 16, parameter TUSER_WIDTH = 1
 		end else begin
 			`uvm_fatal(get_type_name(),"vif is not set")
 		end
+
 	endfunction : build_phase
 
 	
 	task run();
 		axi4_stream_valid_cycle #(.DATA_BYTES(DATA_BYTES), .TUSER_WIDTH(TUSER_WIDTH)) vc;
-
+		
 		forever begin
 			if (vif.ARESET_N !== 1)
 			begin
@@ -82,38 +85,39 @@ class axi4_stream_monitor #(parameter DATA_BYTES = 16, parameter TUSER_WIDTH = 1
 			end
 
 			fork
-				begin // Asynchronous reset
+				begin //-- Asynchronous reset
 					@(negedge vif.ARESET_N);
 				end
+
+
 				forever begin
-					// At the positive edge of ACLK
+					//-- At the positive edge of ACLK
 					@(posedge vif.ACLK);
-				
-					// Capture valid bus cycles
+
+					//-- Capture valid bus cycles
+					vc = new();
+
 					if (vif.TVALID == 1 && vif.TREADY == 1) begin
-		
-						
-						vc 			= new();
+
 						vc.tuser 	= vif.TUSER;
 						vc.tdata 	= vif.TDATA;
-						
-						assert (	vc.tuser[DATA_BYTES/4-1:0] ==	//-- assert that hdr flags are part of valid flags
-									vc.tuser[2*DATA_BYTES/4-1:DATA_BYTES/16]
-									|vc.tuser[DATA_BYTES/4-1:0])
-						
-						assert (	vc.tuser[DATA_BYTES/4-1:0] ==	//-- assert that hdr flags are part of valid flags
-									vc.tuser[3*DATA_BYTES/4-1:DATA_BYTES/16]
-									|vc.tuser[DATA_BYTES/4-1:0])
-						
-
 						item_collected_port.write(vc);
 						`uvm_info(get_type_name(),$psprintf("valid cycle tuser %0x tdata %0x", vc.tuser, vc.tdata), UVM_HIGH)
+
 					end
+
+					//-- used to detect the hmc_pkt_delay between packets
+					if (vif.TVALID == 0) begin
+						vc.tuser	= {TUSER_WIDTH{1'b0}};
+						vc.tdata	= {DATA_BYTES{8'b0}};;
+						item_collected_port.write(vc);
+					end
+
 				end
 			join_any
 			disable fork;
-				
-			
+
+
 		end
 	endtask : run
 

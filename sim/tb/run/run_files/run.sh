@@ -39,7 +39,7 @@
 #!/bin/bash
 
 function print_help {
-	printf "Usage: %s: [-c] [-d DUT] [-f FPW] [-g] [-l NUM_LANES] [-p] [-s SEED] -t TEST_NAME\n [-v UVM_VERBOSITY] -?" $(basename $0) >&2
+	printf "Usage: %s: [-c] [-d DUT] [-f FPW] [-g] [-l NUM_LANES] [o] [-q] [-p] [-s SEED] [-t TEST_NAME] [-v UVM_VERBOSITY] -?\n" $(basename $0) >&2
 }
 
 #-----------------------------------------------------------------
@@ -61,14 +61,14 @@ dflag="0"
 test_name=
 verbosity="UVM_LOW"
 use_gui=
-coverage=""
 input_file="-input ${CAG_TB_DIR}/build/ncsim.tcl"
 seed=""
-num_pkt="default"
 num_axi_bytes="64"
+enable_coverage=""
+
 
 #-- parse options
-while getopts 'cgt:v:d:s:l:f:p:' OPTION
+while getopts 'cgot:v:d:s:l:f:q?' OPTION
 do
 	case $OPTION in
 		c)	do_clean_up=1
@@ -82,14 +82,17 @@ do
 			;;
 		l)	num_lanes="${OPTARG}"
 			;;
-		p)  num_pkt="${OPTARG}"
-			;;
 		s)  seed="+svseed+${OPTARG}"
 			;;
 		t)	tflag="1"
 			test_name="$OPTARG"
 			;;
 		v)	verbosity="$OPTARG"
+			;;
+		o)	enable_coverage="-coverage all -covoverwrite"
+			;;
+		q)	input_file=""
+			verbosity="UVM_NONE"
 			;;
 		?)	print_help
 			exit 2
@@ -157,19 +160,12 @@ then
 	test_name="simple_test"
 fi
 
-#-- Set up the test
-if [ $num_pkt == "default" ]
-then
-	num_pkt="100"
-fi
-printf "Sending $num_pkt packets. \n"
-
 #-- select DUT
 if [ "$dflag" == "0" ]
 then
 	printf "DUT is default: ${CAG_DUT}\n"
 else
-	echo "DUT used: ${CAG_DUT}"	
+	echo "DUT used: ${CAG_DUT}"
 fi
 CAG_TB_COMPILE_IUS="${CAG_TB_DIR}/build/compile_ius_${CAG_DUT}.f"
 
@@ -187,6 +183,7 @@ fi
 echo "Starting the verification environment..."
 irun ${input_file} \
 	-f ${CAG_TB_COMPILE_IUS} \
+	${enable_coverage} \
 	-access +rwc \
 	${use_gui} "+UVM_TESTNAME=${test_name}" "+UVM_VERBOSITY=${verbosity}" ${seed} \
-	"-define LOG_NUM_LANES=$log_num_lanes -define FPW=$fpw -define LOG_FPW=$log_fpw -define NUM_PACKETS=$num_pkt -define AXI4BYTES=$num_axi_bytes" $*
+	"-define LOG_NUM_LANES=$log_num_lanes -define FPW=$fpw -define LOG_FPW=$log_fpw -define AXI4BYTES=$num_axi_bytes" $*

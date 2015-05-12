@@ -148,7 +148,7 @@
     input [127:0]   flit;
 
     begin
-        rrp = flit[64+8-1:64];
+        rrp = flit[64+7:64];
     end
  endfunction
 
@@ -156,7 +156,7 @@
     input [127:0]   flit;
 
     begin
-        frp = flit[64+8+8-1:64+8];
+        frp = flit[64+15:64+8];
     end
  endfunction
  
@@ -164,10 +164,18 @@
         input [127:0]   flit;
 
         begin
-                seq = flit[64+8+8+3-1:64+8+8];
+                seq = flit[64+18:64+16];
         end
  endfunction
  
+ function [6:0] errstat;
+        input [127:0]   flit;
+
+        begin
+                errstat = flit[64+26:64+20];
+        end
+ endfunction
+
  function [4:0] rtc;
         input [127:0]   flit;
 

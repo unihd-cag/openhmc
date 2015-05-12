@@ -35,13 +35,13 @@
  *   along with this source file.  If not, see <http://www.gnu.org/licenses/>.
  *
  *
- *  Module name: hmc_ram
+ *  Module name: openhmc_ram
  *
  */
 
 `default_nettype none
 
-module hmc_ram #(
+module openhmc_ram #(
         parameter DATASIZE  = 78,   // Memory data word width
         parameter ADDRSIZE  = 9,    // Number of memory address bits
         parameter PIPELINED = 0

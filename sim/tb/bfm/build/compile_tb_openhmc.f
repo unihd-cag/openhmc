@@ -36,10 +36,12 @@
 #
 #
 
+#Leave untouched
++define+HMC_REQUESTER_IS_ACTIVE=0
++define+HMC_RESPONDER_IS_ACTIVE=0
++define+CAG_ASSERTIONS
+
 +define+RFS_DATA_WIDTH=64
-+define+RFS_VC107_1HMC_8LANE_TOP_RF_AWIDTH=5
-+define+RFS_VC107_1HMC_8LANE_TOP_RF_RWIDTH=64
-+define+RFS_VC107_1HMC_8LANE_TOP_RF_WWIDTH=64
 +define+RFS_HMC_CONTROLLER_RF_AWIDTH=4
 +define+RFS_HMC_CONTROLLER_RF_RWIDTH=64
 +define+RFS_HMC_CONTROLLER_RF_WWIDTH=64
@@ -51,11 +53,11 @@
 +incdir+${OPENHMC_SIM}/UVC/hmc_module/sv
 +incdir+${OPENHMC_SIM}/UVC/hmc_base_types/sv
 
+#Micron BFM model
+-f ${OPENHMC_SIM}/bfm/hmc_bfm.f
 
 -64bit
 -access +rwc
-
--linedebug
 
 -uvm
 
@@ -74,8 +76,6 @@
 -ncerror RECOME
 -nowarn CUVIHR
 +UVM_NO_RELNOTES
-
--timescale 100ps/10ps
 
 ### DUT-specific files
 

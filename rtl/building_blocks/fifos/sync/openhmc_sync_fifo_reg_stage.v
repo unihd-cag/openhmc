@@ -35,13 +35,13 @@
  *   along with this source file.  If not, see <http://www.gnu.org/licenses/>.
  *
  *
- *  Module name: sync_fifo_reg_stage
+ *  Module name: openhmc_sync_fifo_reg_stage
  *
  */
 
 `default_nettype none
 
-module sync_fifo_reg_stage #(parameter DWIDTH = 8)(
+module openhmc_sync_fifo_reg_stage #(parameter DWIDTH = 8)(
     input wire clk,
     input wire res_n,
     input wire [DWIDTH-1:0] d_in,

@@ -48,7 +48,7 @@ module crc_accu #(parameter FPW=4)(
     //----------------------------------
     //----Input
     //----------------------------------
-    input  wire                 clear  ,
+    input  wire [FPW-1:0]       tail  ,
     input  wire [(FPW*32)-1:0]  d_in   ,
     input  wire [FPW-1:0]       valid  ,
 
@@ -61,9 +61,8 @@ module crc_accu #(parameter FPW=4)(
 integer i_f;
 
 reg  [31:0]    crc_temp [FPW:0];
-reg  [31:0]    crc;
-
 wire [31:0]    in [FPW-1:0];
+
 
 genvar f;
 generate
@@ -78,38 +77,28 @@ always @(posedge clk or negedge res_n) `else
 always @(posedge clk) `endif
 begin
 if (!res_n) begin
-    crc    <= {32{1'b0}};
+    crc_out     <= 32'h0;
+    crc_temp[0] <= 32'h0;
 end
 else begin
-    crc    <= {32{1'b0}};
+    crc_out <= 32'h0;
+
     for(i_f=0;i_f<FPW;i_f=i_f+1) begin
-        if(valid[i_f])begin
-            crc    <= crc_temp[i_f+1];
+        if(tail[i_f]) begin
+            crc_out <= crc_temp[i_f+1];
         end
     end
-end
-end
 
-`ifdef ASYNC_RES
-always @(posedge clk or negedge res_n) `else
-always @(posedge clk) `endif
-begin
-if (!res_n) begin
-    crc_out <= 32'h0;
-end
-else begin
-    crc_out <= crc;
+    if(|tail) begin
+        crc_temp[0] <= 32'h0;
+    end else begin
+        crc_temp[0] <= crc_temp[FPW];
+    end
 end
 end
 
 always @(*)
 begin
-        if(clear) begin
-            crc_temp[0] = 32'h0;
-        end else begin
-            crc_temp[0] = crc;
-        end
-
         for(i_f=0;i_f<FPW;i_f=i_f+1) begin
             crc_temp[i_f+1][31] = in[i_f][31] ^ crc_temp[i_f][3]^crc_temp[i_f][5]^crc_temp[i_f][6]^crc_temp[i_f][8]^crc_temp[i_f][10]^crc_temp[i_f][11]^crc_temp[i_f][14]^crc_temp[i_f][15]^crc_temp[i_f][17]^crc_temp[i_f][18]^crc_temp[i_f][19]^crc_temp[i_f][21]^crc_temp[i_f][26]^crc_temp[i_f][29];
             crc_temp[i_f+1][30] = in[i_f][30] ^ crc_temp[i_f][2]^crc_temp[i_f][4]^crc_temp[i_f][5]^crc_temp[i_f][7]^crc_temp[i_f][9]^crc_temp[i_f][10]^crc_temp[i_f][13]^crc_temp[i_f][14]^crc_temp[i_f][16]^crc_temp[i_f][17]^crc_temp[i_f][18]^crc_temp[i_f][20]^crc_temp[i_f][25]^crc_temp[i_f][28];

@@ -40,13 +40,60 @@
 //-- the base test
 `include "hmc_base_test.sv"
 
+
+//-- sequence lib
+`include "seq_lib/hmc_seq_lib.sv"
+
 //-- the init sequence
 `include "hmc_init_seq.sv"
+
+//-- bfm init sequence
+`include "bfm_init_seq.sv"
 
 //-- check registers after test ends
 `include "hmc_check_seq.sv"
 
-//-- the tests
 `include "simple_test/simple_test_seq.sv"
 `include "simple_test/simple_test.sv"
+
+//test !
+`include "sleep_mode/sleep_mode_seq.sv"
+`include "sleep_mode/sleep_mode.sv"
+//test
+
+`include "atomic_pkt_test/atomic_pkt_test.sv"
+`include "atomic_pkt_test/atomic_pkt_test_seq.sv"
+
+`include "big_pkt_hdelay_test/big_pkt_hdelay_test.sv"
+`include "big_pkt_hdelay_test/big_pkt_hdelay_test_seq.sv"
+
+`include "big_pkt_test/big_pkt_test.sv"
+`include "big_pkt_test/big_pkt_test_seq.sv"
+
+`include "small_pkt_test/small_pkt_test.sv"
+`include "small_pkt_test/small_pkt_test_seq.sv"
+
+`include "big_pkt_zdelay_test/big_pkt_zdelay_test.sv"
+`include "big_pkt_zdelay_test/big_pkt_zdelay_test_seq.sv"
+
+`include "high_delay_pkt_test/high_delay_pkt_test.sv"
+`include "high_delay_pkt_test/high_delay_pkt_test_seq.sv"
+
+`include "zero_delay_pkt_test/zero_delay_pkt_test.sv"
+`include "zero_delay_pkt_test/zero_delay_pkt_test_seq.sv"
+
+`include "non_posted_pkt_test/non_posted_pkt_test.sv"
+`include "non_posted_pkt_test/non_posted_pkt_test_seq.sv"
+
+`include "posted_pkt_test/posted_pkt_test.sv"
+`include "posted_pkt_test/posted_pkt_test_seq.sv"
+
+`include "small_pkt_hdelay_test/small_pkt_hdelay_test.sv"
+`include "small_pkt_hdelay_test/small_pkt_hdelay_test_seq.sv"
+
+`include "small_pkt_zdelay_test/small_pkt_zdelay_test.sv"
+`include "small_pkt_zdelay_test/small_pkt_zdelay_test_seq.sv"
+
+`include "init_test/init_test.sv"
+`include "init_test/init_test_seq.sv"
 

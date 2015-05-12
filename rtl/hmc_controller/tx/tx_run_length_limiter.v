@@ -50,21 +50,21 @@
 `default_nettype none
 
 module tx_run_length_limiter #(
-    parameter DWIDTH=64,
-    parameter GRANULARITY=4,
-    parameter RUN_LIMIT=85
+    parameter LANE_WIDTH  =64,
+    parameter GRANULARITY =4,
+    parameter RUN_LIMIT   =85
 )
 (
     input wire              clk,
     input wire              res_n,
     input wire              enable,
-    input wire [DWIDTH-1:0] data_in,
-    output reg [DWIDTH-1:0] data_out,
+    input wire [LANE_WIDTH-1:0] data_in,
+    output reg [LANE_WIDTH-1:0] data_out,
     output reg              rf_bit_flip
 );
 
-localparam NUM_CHUNKS   = (DWIDTH + GRANULARITY-1)/(GRANULARITY);
-localparam REM_BITS     = DWIDTH - (GRANULARITY * (DWIDTH/GRANULARITY));
+localparam NUM_CHUNKS   = (LANE_WIDTH + GRANULARITY-1)/(GRANULARITY);
+localparam REM_BITS     = LANE_WIDTH - (GRANULARITY * (LANE_WIDTH/GRANULARITY));
 localparam COUNT_BITS   = 8;
 
 wire [NUM_CHUNKS-1:0] no_flip;
@@ -95,8 +95,8 @@ generate
                                     &(~data_in[(chunk+1)*(GRANULARITY)-1:chunk*(GRANULARITY)-1]);
     end
 
-    assign no_flip[NUM_CHUNKS-1] =  &( data_in[DWIDTH-1:(NUM_CHUNKS-1)*(GRANULARITY)-1]) ||
-                                    &(~data_in[DWIDTH-1:(NUM_CHUNKS-1)*(GRANULARITY)-1]);
+    assign no_flip[NUM_CHUNKS-1] =  &( data_in[LANE_WIDTH-1:(NUM_CHUNKS-1)*(GRANULARITY)-1]) ||
+                                    &(~data_in[LANE_WIDTH-1:(NUM_CHUNKS-1)*(GRANULARITY)-1]);
 
 
     // Start at the top and count until a flip is found
@@ -108,7 +108,7 @@ generate
         assign count_top_part[chunkT]       = (still_counting_top[chunkT] ? GRANULARITY : 0) + count_top_part[chunkT-1];
     end
 
-    assign count_top = (still_counting_top[NUM_CHUNKS-1] ? DWIDTH :             // No flips found
+    assign count_top = (still_counting_top[NUM_CHUNKS-1] ? LANE_WIDTH :             // No flips found
                         count_top_part[NUM_CHUNKS-2]) +                     // Take the last value
                         (no_flip[0] ? (count_bottom_d1 == 0 ? 1 : count_bottom_d1) : 0); // Add the saved count
 
@@ -121,7 +121,7 @@ generate
         assign count_bottom_part[chunkB]     = (still_counting_bottom[chunkB] ? GRANULARITY : 0) + count_bottom_part[chunkB-1];
     end
 
-    assign count_bottom = still_counting_bottom[NUM_CHUNKS-1] ? DWIDTH + (count_bottom_d1 == 0 ? 1 : count_bottom_d1) : // No flips found + saved count
+    assign count_bottom = still_counting_bottom[NUM_CHUNKS-1] ? LANE_WIDTH + (count_bottom_d1 == 0 ? 1 : count_bottom_d1) : // No flips found + saved count
                           count_bottom_part[NUM_CHUNKS-2] +                                     // Take the last value
                           (no_flip[NUM_CHUNKS-1] ? (REM_BITS ? REM_BITS : GRANULARITY) + 1 : 0);    // Add the remainder
 
@@ -137,16 +137,18 @@ always @(posedge clk)  begin `endif
         no_flip_bottom_d1 <= 1'b0;
         data_in_bottom_d1 <= 1'b0;
         rf_bit_flip       <= 1'b0;
+        data_out          <= {LANE_WIDTH{1'b0}};
     end else begin
         count_bottom_d1   <= count_bottom;
         no_flip_bottom_d1 <= no_flip[NUM_CHUNKS-1];
-        data_in_bottom_d1 <= data_in[DWIDTH-1];
-        rf_bit_flip       <= bit_flip;
+        data_in_bottom_d1 <= data_in[LANE_WIDTH-1];
 
-        if (enable && bit_flip)
-            data_out <= {data_in[DWIDTH-1:1], ~data_in[0]};
-        else
-            data_out <= data_in;
+        if (enable && bit_flip) begin
+            data_out    <= {data_in[LANE_WIDTH-1:1], ~data_in[0]};
+            rf_bit_flip <= bit_flip;
+        end else begin
+            data_out    <= data_in;
+        end
     end
 end
 

@@ -57,9 +57,9 @@ class simple_test extends hmc_base_test;
 
 
 	virtual function void build_phase(uvm_phase phase);
-
+		
 		uvm_config_db#(uvm_object_wrapper)::set(this,"hmc_tb0.v_seqr.run_phase","default_sequence",simple_test_seq::type_id::get());
-
+		
 		super.build_phase(phase);
 
 	endfunction : build_phase

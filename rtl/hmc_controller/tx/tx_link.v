@@ -44,10 +44,13 @@
 module tx_link #(
     parameter LOG_FPW           = 2,
     parameter FPW               = 4,
-    parameter DWIDTH            = 512,
+    parameter DWIDTH            = FPW*128,
     parameter NUM_LANES         = 8,
     parameter HMC_PTR_SIZE      = 8,
-    parameter HMC_RF_RWIDTH     = 64
+    parameter HMC_RF_RWIDTH     = 64,
+    parameter HMC_RX_AC_COUPLED = 1,
+    //Debug
+    parameter DBG_RX_TOKEN_MON  = 1
 ) (
 
     //----------------------------------
@@ -87,7 +90,8 @@ module tx_link #(
     input   wire [HMC_PTR_SIZE-1:0]     rx_hmc_frp,
     input   wire [HMC_PTR_SIZE-1:0]     rx_rrp,
     input   wire [7:0]                  rx_returned_tokens,
-    input   wire [LOG_FPW:0]            rx_hmc_tokens_to_be_returned,
+    input   wire [LOG_FPW:0]            rx_hmc_tokens_to_return,
+    input   wire [LOG_FPW:0]            rx_hmc_poisoned_tokens_to_return,
 
     //----------------------------------
     //----RF
@@ -98,6 +102,7 @@ module tx_link #(
     output  reg  [HMC_RF_RWIDTH-1:0]    rf_sent_np,
     output  reg  [HMC_RF_RWIDTH-1:0]    rf_sent_r,
     output  reg                         rf_run_length_bit_flip,
+    output  reg                         rf_error_abort_not_cleared,
 
     //Status
     input   wire                        rf_link_is_up,
@@ -113,12 +118,15 @@ module tx_link #(
     //input   wire                        rf_warm_reset,
     input   wire                        rf_hmc_init_cont_set,
     input   wire                        rf_scrambler_disable,
-    input   wire                        rf_dbg_dont_send_tret,
     input   wire [9:0]                  rf_rx_buffer_rtc,
     input   wire [2:0]                  rf_first_cube_ID,
     input   wire [4:0]                  rf_irtry_to_send,
-    input   wire                        rf_run_length_enable
+    input   wire                        rf_run_length_enable,
 
+    //Debug Register
+    input   wire                        rf_dbg_dont_send_tret,
+    input   wire                        rf_dbg_halt_on_error_abort,
+    input   wire                        rf_dbg_halt_on_tx_retry
 );
 
 `include "hmc_field_functions.h"
@@ -144,23 +152,29 @@ localparam PKT_P_WRITE      = 3'b011;
 localparam PKT_MISC_P_WRITE = 3'b100;
 
 //------------------------------------------------------------------------------------Scrambler
-wire [14:0]             seed_lane   [15:0];
-assign seed_lane[0]     = (rf_scrambler_disable == 1'b0) ? 15'h4D56 : 15'h0;
-assign seed_lane[1]     = (rf_scrambler_disable == 1'b0) ? 15'h47FF : 15'h0;
-assign seed_lane[2]     = (rf_scrambler_disable == 1'b0) ? 15'h75B8 : 15'h0;
-assign seed_lane[3]     = (rf_scrambler_disable == 1'b0) ? 15'h1E18 : 15'h0;
-assign seed_lane[4]     = (rf_scrambler_disable == 1'b0) ? 15'h2E10 : 15'h0;
-assign seed_lane[5]     = (rf_scrambler_disable == 1'b0) ? 15'h3EB2 : 15'h0;
-assign seed_lane[6]     = (rf_scrambler_disable == 1'b0) ? 15'h4302 : 15'h0;
-assign seed_lane[7]     = (rf_scrambler_disable == 1'b0) ? 15'h1380 : 15'h0;
-assign seed_lane[8]     = (rf_scrambler_disable == 1'b0) ? 15'h3EB3 : 15'h0;
-assign seed_lane[9]     = (rf_scrambler_disable == 1'b0) ? 15'h2769 : 15'h0;
-assign seed_lane[10]    = (rf_scrambler_disable == 1'b0) ? 15'h4580 : 15'h0;
-assign seed_lane[11]    = (rf_scrambler_disable == 1'b0) ? 15'h5665 : 15'h0;
-assign seed_lane[12]    = (rf_scrambler_disable == 1'b0) ? 15'h6318 : 15'h0;
-assign seed_lane[13]    = (rf_scrambler_disable == 1'b0) ? 15'h6014 : 15'h0;
-assign seed_lane[14]    = (rf_scrambler_disable == 1'b0) ? 15'h077B : 15'h0;
-assign seed_lane[15]    = (rf_scrambler_disable == 1'b0) ? 15'h261F : 15'h0;
+wire [14:0]             seed_lane   [NUM_LANES-1:0];
+
+assign seed_lane[0]     = 15'h4D56;
+assign seed_lane[1]     = 15'h47FF;
+assign seed_lane[2]     = 15'h75B8;
+assign seed_lane[3]     = 15'h1E18;
+assign seed_lane[4]     = 15'h2E10;
+assign seed_lane[5]     = 15'h3EB2;
+assign seed_lane[6]     = 15'h4302;
+assign seed_lane[7]     = 15'h1380;
+
+generate
+    if(NUM_LANES==16) begin : seed_gen_16x
+        assign seed_lane[8]     = 15'h3EB3;
+        assign seed_lane[9]     = 15'h2769;
+        assign seed_lane[10]    = 15'h4580;
+        assign seed_lane[11]    = 15'h5665;
+        assign seed_lane[12]    = 15'h6318;
+        assign seed_lane[13]    = 15'h6014;
+        assign seed_lane[14]    = 15'h077B;
+        assign seed_lane[15]    = 15'h261F;
+    end
+endgenerate
 
 wire [NUM_LANES-1:0]      bit_was_flipped;
 
@@ -176,6 +190,7 @@ localparam SLEEP                = 4'b1011;
 localparam WAIT_FOR_HMC         = 4'b1100;
 localparam LNK_RTRY             = 4'b1101;
 localparam FATAL_ERROR          = 4'b1110;
+localparam DEBUG                = 4'b1111;
 
 assign  rf_tx_init_status = state[3] ? 0 : state[1:0];
 
@@ -213,7 +228,7 @@ endgenerate
 
 //------------------------------------------------------------------------------------Init Regs
 localparam TS1_SEQ_INC_VAL_PER_CYCLE    = (NUM_LANES==8) ? FPW : (FPW/2);
-localparam NUM_NULL_TO_SEND_BEFORE_IDLE = 63; //see HMC spec
+localparam NUM_NULL_TO_SEND_BEFORE_IDLE = 50; //see HMC spec, 32 is minimum
 
 wire  [(NUM_LANES*4)-1:0]       ts1_seq_part_reordered      [TS1_SEQ_INC_VAL_PER_CYCLE-1:0];    //ts1 seq is 4 bits
 reg   [3:0]                     ts1_seq_nr_per_flit         [TS1_SEQ_INC_VAL_PER_CYCLE-1:0];
@@ -253,7 +268,7 @@ reg  [128-1:0]      data2seq_frp_stage_flit_comb     [FPW-1:0];
 reg  [FPW-1:0]      data2seq_frp_stage_flit_is_hdr;
 reg  [FPW-1:0]      data2seq_frp_stage_flit_is_tail;
 reg  [FPW-1:0]      data2seq_frp_stage_flit_is_valid;
-reg  [FPW-1:0]      data2seq_frp_stage_flit_is_flow;
+reg  [FPW-1:0]      data2seq_frp_stage_is_flow;
 reg                 data2seq_frp_stage_force_tx_retry;
 
 //------------------------------------------------------------------------------------Counter variables
@@ -267,13 +282,13 @@ reg  [128-1:0]      data2rtc_stage_flit     [FPW-1:0];
 reg  [FPW-1:0]      data2rtc_stage_flit_is_hdr;
 reg  [FPW-1:0]      data2rtc_stage_flit_is_tail;
 reg  [FPW-1:0]      data2rtc_stage_flit_is_valid;
-reg  [FPW-1:0]      data2rtc_stage_flit_is_flow;
+reg                 data2rtc_stage_is_flow;
 reg                 data2rtc_stage_force_tx_retry;
 
 //------------------------------------------------------------------------------------RETRY
 //HMC
 //Amount of cycles to wait until start HMC retry is issued again (when RX error abort is not cleared)
-localparam          CYCLES_TO_CLEAR_ERR_ABORT_MODE = 250;
+localparam          CYCLES_TO_CLEAR_ERR_ABORT_MODE = 254;   //safe value
 reg  [7:0]          error_abort_mode_clr_cnt;
 reg                 force_hmc_retry;
 reg  [5:0]          irtry_start_retry_cnt;
@@ -289,7 +304,7 @@ reg  [128-1:0]              data2ram_flit_temp      [FPW-1:0];
 reg  [FPW-1:0]              data2ram_flit_is_hdr;
 reg  [FPW-1:0]              data2ram_flit_is_tail;
 reg  [FPW-1:0]              data2ram_flit_is_valid;
-reg  [FPW-1:0]              data2ram_flit_is_flow;
+reg                         data2ram_is_flow;
 reg                         data2ram_force_tx_retry;
 
 localparam RAM_ADDR_SIZE   =   (FPW == 2) ? 7 :
@@ -304,8 +319,8 @@ wire [RAM_ADDR_SIZE-1:0]    ram_w_addr_next;
 assign                      ram_w_addr_next = ram_w_addr + 1;
 reg  [RAM_ADDR_SIZE-1:0]    ram_r_addr_temp;
 reg  [FPW-1:0]              ram_r_mask;
-wire [128+4-1:0]            ram_r_data              [FPW-1:0];
-reg  [128+4-1:0]            ram_w_data              [FPW-1:0];
+wire [128+3-1:0]            ram_r_data              [FPW-1:0];
+reg  [128+3-1:0]            ram_w_data              [FPW-1:0];
 
 wire  [RAM_ADDR_SIZE-1:0]   ram_r_addr;
 assign                      ram_r_addr = rx_rrp[HMC_PTR_SIZE-1:HMC_PTR_SIZE-RAM_ADDR_SIZE];
@@ -316,7 +331,7 @@ assign                      ram_result          = ram_r_addr - ram_w_addr_next;
 
 //A safe value since ram_w_addr is calculated some cycles after packets were accepted
 wire                        ram_full;
-assign                      ram_full = (ram_result<8 && ram_result>0) ? 1'b1 : 1'b0 ;
+assign                      ram_full = (ram_result<9 && ram_result>0) ? 1'b1 : 1'b0 ;
 
 
 //Header/Tail fields, and at the same time form the RAM read pointer
@@ -344,7 +359,7 @@ reg  [128-1:0]      data2rrp_stage_flit           [FPW-1:0];
 reg  [FPW-1:0]      data2rrp_stage_flit_is_hdr;
 reg  [FPW-1:0]      data2rrp_stage_flit_is_tail;
 reg  [FPW-1:0]      data2rrp_stage_flit_is_valid;
-reg  [FPW-1:0]      data2rrp_stage_flit_is_flow;
+reg                 data2rrp_stage_is_flow;
 
 reg  [7:0]          last_transmitted_rx_hmc_frp;
 
@@ -369,24 +384,21 @@ wire    [63:0]              pret_hdr        ;
 assign                      pret_hdr        = {rf_first_cube_ID,3'h0,34'h0,9'h0,4'h1,4'h1,1'h0,6'b000001};
 
 //------------------------------------------------------------------------------------RTC HANDLING
-//RX input buffer token monitoring -
-reg  [6:0]                  sum_requested_tokens;       //Count the amount of tokens requested from the HMC
-reg  [6:0]                  sum_requested_tokens_temp;  //Use this register for combinational logic
-reg  [9:0]                  remaining_tokens;
-
 //Registers for the RTC field in request packets
 reg                         rtc_return;
 reg  [4:0]                  rtc_return_val;
 reg                         rtc_return_sent;
 
+//A safe value to not send more FLITs than the HMC can buffer
+reg  [LOG_FPW:0]            flits_in_buf;
+reg  [LOG_FPW:0]            flits_transmitted;
+reg  [9:0]                  remaining_tokens;
+wire                        hmc_tokens_av;
+assign                      hmc_tokens_av = ((rf_hmc_tokens_av+flits_in_buf) > 8+(2*FPW)) ? 1'b1 : 1'b0;
+
 //Return a maximum of 31 tokens
 wire [4:0]                  outstanding_tokens_to_return;
 assign                      outstanding_tokens_to_return   = remaining_tokens > 31 ? 31 : remaining_tokens;
-
-//A safe value to not send more FLITs than the HMC can buffer
-wire                        hmc_tokens_av;
-assign                      hmc_tokens_av = (rf_hmc_tokens_av > 8+(2*FPW)) ? 1'b1 : 1'b0;
-reg  [LOG_FPW:0]            flits_transmitted;
 
 //=====================================================================================================
 //-----------------------------------------------------------------------------------------------------
@@ -411,53 +423,66 @@ end
 //---------------------------------Monitor Remaining Tokens in the RX input buffer, just a debug help
 //====================================================================
 //Track the remaining tokens in the rx input buffer. This is optional since the HMC must make sure not to send more tokens than RX can buffer, useful for debugging
-always @(*)  begin
-    sum_requested_tokens_temp   = {7{1'b0}};
+generate
+if(DBG_RX_TOKEN_MON==1) begin : Tokens_in_RX_buf
 
-    for(i_f=0;i_f<FPW;i_f=i_f+1) begin
+    reg  [6:0]                  sum_requested_tokens;       //Count the amount of tokens requested from the HMC
+    reg  [6:0]                  sum_requested_tokens_temp;  //Use this register for combinational logic
 
-        if(data2rtc_stage_flit_is_hdr[i_f] && data2rtc_stage_flit_is_valid[i_f] && !is_flow(data2rtc_stage_flit[i_f])) begin
+    always @(*)  begin
+        sum_requested_tokens_temp   = {7{1'b0}};
 
-            if(cmd_type(data2rtc_stage_flit[i_f]) == PKT_READ ||
-               cmd_type(data2rtc_stage_flit[i_f]) == PKT_MODE_READ ) begin
-                //it is either a data read or mode read
-                sum_requested_tokens_temp    =  sum_requested_tokens_temp + num_requested_flits(data2rtc_stage_flit[i_f]);
-            end else if(    (cmd_type(data2rtc_stage_flit[i_f]) == PKT_WRITE) ||
-                            (cmd_type(data2rtc_stage_flit[i_f]) == PKT_MISC_WRITE) ) begin
-                //it is not a posted transaction, so 1 token will be returned as response
-                sum_requested_tokens_temp    = sum_requested_tokens_temp + 1;
+        for(i_f=0;i_f<FPW;i_f=i_f+1) begin
+
+            if(data2rtc_stage_flit_is_hdr[i_f] && data2rtc_stage_flit_is_valid[i_f]) begin
+
+                if(cmd_type(data2rtc_stage_flit[i_f]) == PKT_READ ||
+                   cmd_type(data2rtc_stage_flit[i_f]) == PKT_MODE_READ ) begin
+                    //it is either a data read or mode read
+                    sum_requested_tokens_temp    =  sum_requested_tokens_temp + num_requested_flits(data2rtc_stage_flit[i_f]);
+                end else if(    (cmd_type(data2rtc_stage_flit[i_f]) == PKT_WRITE) ||
+                                (cmd_type(data2rtc_stage_flit[i_f]) == PKT_MISC_WRITE) ) begin
+                    //it is not a posted transaction, so 1 token will be returned as response
+                    sum_requested_tokens_temp    = sum_requested_tokens_temp + 1;
+                end
+
             end
-
         end
     end
-end
 
-`ifdef ASYNC_RES
-always @(posedge clk or negedge res_n)  begin `else
-always @(posedge clk)  begin `endif
-if(!res_n) begin
-    sum_requested_tokens <= {7{1'b0}};
-end else begin
-    sum_requested_tokens <= sum_requested_tokens_temp;
-end
-end
-
-//Make sure the HMC has enough tokens in its input buffer left
-`ifdef ASYNC_RES
-always @(posedge clk or negedge res_n)  begin `else
-always @(posedge clk)  begin `endif
-if(!res_n) begin
-    rf_rx_tokens_av     <= {10{1'b0}};
-end else begin
-    if(state==TX_NULL_1)begin
-        //initialize token counts when HMC init is not done
-        rf_rx_tokens_av        <= rf_rx_buffer_rtc;
+    `ifdef ASYNC_RES
+    always @(posedge clk or negedge res_n)  begin `else
+    always @(posedge clk)  begin `endif
+    if(!res_n) begin
+        sum_requested_tokens <= {7{1'b0}};
     end else begin
-        //calculate remaining tokens in RX buffers
-        rf_rx_tokens_av        <= rf_rx_tokens_av + rx_hmc_tokens_to_be_returned - sum_requested_tokens;
+        sum_requested_tokens <= sum_requested_tokens_temp;
+    end
+    end
+
+    //Monitor remaining tokens in the openHMC RX input buffer
+    `ifdef ASYNC_RES
+    always @(posedge clk or negedge res_n)  begin `else
+    always @(posedge clk)  begin `endif
+    if(!res_n) begin
+        rf_rx_tokens_av     <= {10{1'b0}};
+    end else begin
+        if(state==TX_NULL_1)begin
+            //initialize token counts when HMC init is not done
+            rf_rx_tokens_av        <= rf_rx_buffer_rtc;
+        end else begin
+            //calculate remaining tokens in RX buffers
+            rf_rx_tokens_av        <= rf_rx_tokens_av + rx_hmc_tokens_to_return - sum_requested_tokens;
+        end
+    end
+    end
+    
+end else begin
+    always @(posedge clk)  begin
+        rf_rx_tokens_av   <= 10'h0;
     end
 end
-end
+endgenerate
 
 //=======================================================================================================================
 //---------------------------------ALL OTHER LOGIC HERE
@@ -473,7 +498,7 @@ if(!res_n) begin
     data2rtc_stage_flit_is_hdr      <= {FPW{1'b0}};
     data2rtc_stage_flit_is_tail     <= {FPW{1'b0}};
     data2rtc_stage_flit_is_valid    <= {FPW{1'b0}};
-    data2rtc_stage_flit_is_flow     <= {FPW{1'b0}};
+    data2rtc_stage_is_flow          <= 1'b0;
 
     data2rtc_stage_force_tx_retry   <= 1'b0;
     d_in_shift_out                  <= 1'b0;
@@ -491,7 +516,7 @@ if(!res_n) begin
     for(i_t=0;i_t<TS1_SEQ_INC_VAL_PER_CYCLE;i_t=i_t+1) begin
         ts1_seq_nr_per_flit[i_t]    <= i_t;
     end
-    num_init_nulls_sent             <= {6{1'b0}};
+    num_init_nulls_sent             <= 6'h0;
 
     //General
     state                           <= TX_NULL_1;
@@ -512,7 +537,6 @@ if(!res_n) begin
 
     //Flow Control
     tx_link_retry_request           <= 1'b0;
-
 
 end
 else begin
@@ -545,15 +569,19 @@ else begin
     if(rtc_rx_initialize) begin
         remaining_tokens <= rf_rx_buffer_rtc;
     end else begin
-        remaining_tokens <= remaining_tokens + rx_hmc_tokens_to_be_returned;
+        remaining_tokens <= remaining_tokens + rx_hmc_tokens_to_return + rx_hmc_poisoned_tokens_to_return;
     end
 
     //Reset information bits
     data2rtc_stage_flit_is_hdr     <= {FPW{1'b0}};
     data2rtc_stage_flit_is_tail    <= {FPW{1'b0}};
     data2rtc_stage_flit_is_valid   <= {FPW{1'b0}};
-    data2rtc_stage_flit_is_flow    <= {FPW{1'b0}};
+    data2rtc_stage_is_flow         <= 1'b0;
     data2rtc_stage_force_tx_retry  <= 1'b0;
+
+    for(i_f=0;i_f<FPW;i_f=i_f+1)begin
+        data2rtc_stage_flit[i_f]    <= 128'h0;
+    end
 
     case(state)
 
@@ -561,7 +589,7 @@ else begin
 
         TX_NULL_1: begin
 
-            num_init_nulls_sent <= {6{1'b0}};
+            num_init_nulls_sent <= 6'h0;
 
             //---State---
             if(rf_hmc_received_init_null)begin
@@ -572,7 +600,7 @@ else begin
 
         TX_TS1: begin
 
-            data2rtc_stage_flit_is_flow     <= {FPW{1'b1}};
+            data2rtc_stage_is_flow     <= 1'b1;
 
             for(i_f=0;i_f<FPW;i_f=i_f+1)begin
                 data2rtc_stage_flit[i_f]    <= ts1_flit[i_f];
@@ -623,7 +651,7 @@ else begin
                 data2rtc_stage_flit_is_tail[0]    <= 1'b1;
                 data2rtc_stage_flit_is_valid[0]   <= 1'b1;
 
-                remaining_tokens    <= remaining_tokens + rx_hmc_tokens_to_be_returned - outstanding_tokens_to_return;
+                remaining_tokens    <= remaining_tokens + rx_hmc_tokens_to_return + rx_hmc_poisoned_tokens_to_return - outstanding_tokens_to_return;
                 rtc_return_val      <= outstanding_tokens_to_return;
                 rtc_return          <= 1'b1;
             end
@@ -666,7 +694,7 @@ else begin
                 //otherwise use regular data input
                 (!d_in_use_buf && |d_in_flit_is_tail))
             ) begin
-                remaining_tokens    <= remaining_tokens + rx_hmc_tokens_to_be_returned - outstanding_tokens_to_return;
+                remaining_tokens    <= remaining_tokens + rx_hmc_tokens_to_return + rx_hmc_poisoned_tokens_to_return - outstanding_tokens_to_return;
                 rtc_return_val      <= outstanding_tokens_to_return;
                 rtc_return          <= 1'b1;
             end
@@ -704,8 +732,8 @@ else begin
                 end
 
                 //Use buf next time TX state is entered if there is a packet pending
-                if((!d_in_use_buf && (d_in_flit_is_hdr > d_in_flit_is_tail)) ||
-                   (d_in_use_buf  && (d_in_buf_flit_is_hdr > d_in_buf_flit_is_tail)) )begin
+                if((!d_in_use_buf && (d_in_flit_is_hdr[FPW-1:1] > d_in_flit_is_tail[FPW-1:1])) ||
+                   (d_in_use_buf  && (d_in_buf_flit_is_hdr[FPW-1:1] > d_in_buf_flit_is_tail[FPW-1:1])) )begin
                     d_in_use_buf    <= 1'b1;
                 end
 
@@ -718,7 +746,7 @@ else begin
             data2rtc_stage_flit_is_hdr      <= {FPW{1'b1}};
             data2rtc_stage_flit_is_tail     <= {FPW{1'b1}};
             data2rtc_stage_flit_is_valid    <= {FPW{1'b1}};
-            data2rtc_stage_flit_is_flow     <= {FPW{1'b1}};
+            data2rtc_stage_is_flow          <= 1'b1;
 
             for(i_f=0;i_f<FPW;i_f=i_f+1)begin //Send IRTRY start retry
                 data2rtc_stage_flit[i_f]        <= {48'h0,8'b00000001,8'h00,irtry_hdr};
@@ -730,7 +758,9 @@ else begin
                 irtry_start_retry_cnt           <= {6{1'b0}};
 
                 //---State---
-                if(tx_link_retry_request) begin
+                if(rf_dbg_halt_on_error_abort) begin
+                    state <= DEBUG;
+                end else if(tx_link_retry_request) begin
                     state <= LNK_RTRY;
                 end else if(!d_in_empty && !ram_full && hmc_tokens_av)begin
                     state           <= TX;
@@ -747,16 +777,14 @@ else begin
     //                                 re-send all valid packets in RAM after sending clear error packets
         LNK_RTRY: begin
 
-            tx_link_retry_request   <= 1'b0;
-
-            if(tx_link_retry_request || irtry_clear_error_cnt>0) begin
+            if(!tx_retry_ongoing && (tx_link_retry_request || irtry_clear_error_cnt>0)) begin
                 for(i_f=0;i_f<FPW;i_f=i_f+1)begin   //Send IRTRY clear error abort
                     data2rtc_stage_flit[i_f]        <= {48'h0,8'b00000010,8'h00,irtry_hdr};
                 end
                 data2rtc_stage_flit_is_hdr      <= {FPW{1'b1}};
                 data2rtc_stage_flit_is_tail     <= {FPW{1'b1}};
                 data2rtc_stage_flit_is_valid    <= {FPW{1'b1}};
-                data2rtc_stage_flit_is_flow     <= {FPW{1'b1}};
+                data2rtc_stage_is_flow          <= 1'b1;
 
                 if(irtry_clear_error_cnt+FPW >= rf_irtry_to_send)begin
                     irtry_clear_error_cnt         <= {6{1'b0}};
@@ -766,9 +794,11 @@ else begin
                 end
             end
 
-            if(tx_retry_finished) begin
+            if(tx_retry_finished && !tx_link_retry_request) begin
                 //---State---
-                if(force_hmc_retry) begin
+                if(rf_dbg_halt_on_tx_retry) begin
+                    state <= DEBUG;
+                end else if(force_hmc_retry) begin
                     state <= HMC_RTRY;
                 end else if(!d_in_empty && !ram_full && hmc_tokens_av) begin
                     state           <= TX;
@@ -776,6 +806,10 @@ else begin
                 end else begin
                     state <= IDLE;
                 end
+            end
+
+            if(!tx_retry_ongoing) begin
+                tx_link_retry_request   <= 1'b0;
             end
         end
 
@@ -805,11 +839,20 @@ else begin
 
         end
 
+        DEBUG: begin
+            //Freeze execution to debug in hardware
+            if(!(rf_dbg_halt_on_tx_retry || rf_dbg_halt_on_error_abort)) begin
+                state <= IDLE;
+            end else begin
+                state <= DEBUG;
+            end
+        end
+
     endcase
 
-    if(!rf_hmc_init_cont_set) begin         //TODO debug only ?
+    if(!rf_hmc_init_cont_set) begin
         state <= TX_NULL_1;
-        num_init_nulls_sent <= {6{1'b0}};
+        num_init_nulls_sent <= 6'h0;
         rtc_rx_initialize   <= 1'b1;
     end
 end
@@ -823,10 +866,14 @@ end
 always @(*)  begin
 
     flits_transmitted = {LOG_FPW+1{1'b0}};
+    flits_in_buf      = {LOG_FPW+1{1'b0}};
 
-    if(d_in_shift_out)begin
-        for(i_f=0;i_f<FPW;i_f=i_f+1)begin
-            flits_transmitted   = flits_transmitted + d_in_flit_is_valid[i_f];
+    for(i_f=0;i_f<FPW;i_f=i_f+1)begin
+        if(d_in_flit_is_valid[i_f] && d_in_shift_out) begin
+            flits_transmitted   = flits_transmitted + {{LOG_FPW{1'b0}},1'b1};
+        end
+        if(d_in_buf_flit_is_valid[i_f] && d_in_use_buf) begin
+            flits_in_buf = flits_in_buf + {{LOG_FPW{1'b0}},1'b1};
         end
     end
 end
@@ -851,22 +898,22 @@ always @(*) begin
     rf_sent_r_comb   = {LOG_FPW+1{1'b0}};
 
     for(i_f=0;i_f<FPW;i_f=i_f+1)begin
-        if(data2rtc_stage_flit_is_hdr[i_f] && data2rtc_stage_flit_is_valid[i_f])begin
+        if(data2seq_frp_stage_flit_is_hdr[i_f])begin
         //split into independent cases to avoid dependencies
         //Instead of comparing the entire cmd field, try to reduce logic effort
 
             //All non-posted types have either bit 3 or 4 in the cmd set:
-            if( data2rtc_stage_flit[i_f][3] ^ data2rtc_stage_flit[i_f][4] ) begin
+            if( data2seq_frp_stage_flit[i_f][3] ^ data2seq_frp_stage_flit[i_f][4] ) begin
                 rf_sent_np_comb = rf_sent_np_comb + {{LOG_FPW{1'b0}},1'b1};
             end
 
             //Only reads have bit 4 and 5 set:
-            if(data2rtc_stage_flit[i_f][4] && data2rtc_stage_flit[i_f][5] ) begin
+            if(data2seq_frp_stage_flit[i_f][4] && data2seq_frp_stage_flit[i_f][5] ) begin
                 rf_sent_r_comb = rf_sent_r_comb + {{LOG_FPW{1'b0}},1'b1};
             end
 
             //Otherwise it's a posted write
-            if(cmd_type(data2rtc_stage_flit[i_f])==PKT_P_WRITE)begin
+            if(cmd_type(data2seq_frp_stage_flit[i_f])==PKT_P_WRITE)begin
                 rf_sent_p_comb = rf_sent_p_comb + {{LOG_FPW{1'b0}},1'b1};
             end
 
@@ -899,19 +946,26 @@ always @(posedge clk)  begin `endif
 if(!res_n) begin
     error_abort_mode_clr_cnt       <= {8{1'b0}};
     force_hmc_retry                <= 1'b0;
+    rf_error_abort_not_cleared     <= 1'b0;
 end else begin
+
+    rf_error_abort_not_cleared     <= 1'b0;
 
     if(rx_error_abort_mode)begin
         error_abort_mode_clr_cnt   <= error_abort_mode_clr_cnt + 1;
     end
 
-    if(rx_error_abort_mode_cleared || !rf_hmc_init_cont_set) begin
+    if(rx_error_abort_mode_cleared) begin
         error_abort_mode_clr_cnt   <= {8{1'b0}};
     end
 
     if((rx_error_abort_mode && state!=HMC_RTRY && error_abort_mode_clr_cnt==0) || (error_abort_mode_clr_cnt > CYCLES_TO_CLEAR_ERR_ABORT_MODE))begin
         force_hmc_retry             <= 1'b1;
         error_abort_mode_clr_cnt    <= {8{1'b0}};
+        
+        if(error_abort_mode_clr_cnt > CYCLES_TO_CLEAR_ERR_ABORT_MODE) begin
+            rf_error_abort_not_cleared  <= 1'b1;
+        end
     end else begin
         if(state==HMC_RTRY)begin
             force_hmc_retry     <= 1'b0;
@@ -930,7 +984,7 @@ always @(*)  begin
     for(i_f=0;i_f<FPW;i_f=i_f+1)begin
         data2seq_frp_stage_flit_comb[i_f]  = data2rtc_stage_flit[i_f];
 
-        if(data2rtc_stage_flit_is_tail[i_f] && !data2rtc_stage_flit_is_flow[i_f] && !rtc_return_sent && rtc_return) begin
+        if(data2rtc_stage_flit_is_tail[i_f] && !data2rtc_stage_is_flow && !rtc_return_sent && rtc_return) begin
             //Return outstanding tokens, but only once per cycle
             data2seq_frp_stage_flit_comb[i_f][64+31:64+27] = rtc_return_val;
             rtc_return_sent                                = 1'b1;
@@ -945,7 +999,7 @@ if(!res_n) begin
     data2seq_frp_stage_flit_is_hdr    <= {FPW{1'b0}};
     data2seq_frp_stage_flit_is_tail   <= {FPW{1'b0}};
     data2seq_frp_stage_flit_is_valid  <= {FPW{1'b0}};
-    data2seq_frp_stage_flit_is_flow   <= {FPW{1'b0}};
+    data2seq_frp_stage_is_flow        <= 1'b0;
     data2seq_frp_stage_force_tx_retry <= 1'b0;
     for(i_f=0;i_f<FPW;i_f=i_f+1)begin
         data2seq_frp_stage_flit[i_f]  <= {128{1'b0}};
@@ -954,7 +1008,7 @@ end else begin
     data2seq_frp_stage_flit_is_hdr    <= data2rtc_stage_flit_is_hdr & data2rtc_stage_flit_is_valid;
     data2seq_frp_stage_flit_is_tail   <= data2rtc_stage_flit_is_tail & data2rtc_stage_flit_is_valid;
     data2seq_frp_stage_flit_is_valid  <= data2rtc_stage_flit_is_valid;
-    data2seq_frp_stage_flit_is_flow   <= data2rtc_stage_flit_is_flow;
+    data2seq_frp_stage_is_flow        <= data2rtc_stage_is_flow;
     data2seq_frp_stage_force_tx_retry <= data2rtc_stage_force_tx_retry;
     for(i_f=0;i_f<FPW;i_f=i_f+1)begin
         data2seq_frp_stage_flit[i_f]  <= data2seq_frp_stage_flit_comb[i_f];
@@ -970,7 +1024,7 @@ always @(*)  begin
 
     //Set data flits
     for(i_f=0;i_f<FPW;i_f=i_f+1)begin
-        if(data2seq_frp_stage_flit_is_valid[i_f] | data2seq_frp_stage_flit_is_flow[i_f]) begin
+        if(data2seq_frp_stage_flit_is_valid[i_f] | data2seq_frp_stage_is_flow) begin
             data2ram_flit_temp[i_f] = data2seq_frp_stage_flit[i_f];
         end else begin
             data2ram_flit_temp[i_f] = {128{1'b0}};
@@ -978,14 +1032,14 @@ always @(*)  begin
     end
 
     //Increment ram addr(also frp) if there is a valid FLIT that is not flow
-    if(|(data2seq_frp_stage_flit_is_valid & ~data2seq_frp_stage_flit_is_flow))begin
+    if(|data2seq_frp_stage_flit_is_valid && !data2seq_frp_stage_is_flow)begin
         tx_frp_adr_incr_temp  = 1'b1;
     end else begin
         tx_frp_adr_incr_temp = 1'b0;
     end
 
     for(i_f=0;i_f<FPW;i_f=i_f+1)begin
-        if(data2seq_frp_stage_flit_is_tail[i_f] && !data2seq_frp_stage_flit_is_flow[i_f] && data2seq_frp_stage_flit_is_valid[i_f])begin
+        if(data2seq_frp_stage_flit_is_tail[i_f] && !data2seq_frp_stage_is_flow && data2seq_frp_stage_flit_is_valid[i_f])begin
             tx_seqnum_temp                        = tx_seqnum_temp + 1;
             //Assign the FRP, combined of the ram selected and the RAM address
             data2ram_flit_temp[i_f][64+15+3:64+8] = {tx_seqnum+tx_seqnum_temp,tx_frp_adr+tx_frp_adr_incr_temp,tx_frp_ram[i_f]};
@@ -1014,7 +1068,7 @@ if(!res_n) begin
     data2ram_flit_is_hdr    <= {FPW{1'b0}};
     data2ram_flit_is_tail   <= {FPW{1'b0}};
     data2ram_flit_is_valid  <= {FPW{1'b0}};
-    data2ram_flit_is_flow   <= {FPW{1'b0}};
+    data2ram_is_flow        <= 1'b0;
     data2ram_force_tx_retry <= 1'b0;
     for(i_f=0;i_f<FPW;i_f=i_f+1)begin
         data2ram_flit[i_f]          <= {128{1'b0}};
@@ -1023,7 +1077,7 @@ end else begin
     data2ram_flit_is_hdr    <= data2seq_frp_stage_flit_is_hdr;
     data2ram_flit_is_tail   <= data2seq_frp_stage_flit_is_tail;
     data2ram_flit_is_valid  <= data2seq_frp_stage_flit_is_valid;
-    data2ram_flit_is_flow   <= data2seq_frp_stage_flit_is_flow ;
+    data2ram_is_flow        <= data2seq_frp_stage_is_flow ;
     data2ram_force_tx_retry <= data2seq_frp_stage_force_tx_retry;
     for(i_f=0;i_f<FPW;i_f=i_f+1)begin
         data2ram_flit[i_f]          <= data2ram_flit_temp[i_f];
@@ -1040,14 +1094,13 @@ always @(posedge clk or negedge res_n)  begin `else
 always @(posedge clk)  begin `endif
 if(!res_n) begin
      for(i_f=0;i_f<FPW;i_f=i_f+1)begin
-        ram_w_data[i_f] <= {128+4{1'b0}};
+        ram_w_data[i_f] <= {128+3{1'b0}};
      end
 
 end else begin
     for(i_f=0;i_f<FPW;i_f=i_f+1)begin
-        if(!data2ram_flit_is_flow[i_f])begin
-            ram_w_data[i_f] <= {    data2ram_flit_is_flow[i_f],
-                                    data2ram_flit_is_valid[i_f],
+        if(!data2ram_is_flow)begin
+            ram_w_data[i_f] <= {    data2ram_flit_is_valid[i_f],
                                     data2ram_flit_is_tail[i_f],
                                     data2ram_flit_is_hdr[i_f],
                                     data2ram_flit[i_f]
@@ -1070,7 +1123,7 @@ end else begin
     //Reset control signals
     ram_w_en    <= 1'b0;
 
-    if(|(data2ram_flit_is_valid & ~data2ram_flit_is_flow)) begin
+    if(|data2ram_flit_is_valid && !data2ram_is_flow) begin
         ram_w_addr  <= ram_w_addr + 1;
         ram_w_en    <= 1'b1;
     end
@@ -1099,7 +1152,7 @@ if(!res_n) begin
     data2rrp_stage_flit_is_hdr      <= {FPW{1'b0}};
     data2rrp_stage_flit_is_tail     <= {FPW{1'b0}};
     data2rrp_stage_flit_is_valid    <= {FPW{1'b0}};
-    data2rrp_stage_flit_is_flow     <= {FPW{1'b0}};
+    data2rrp_stage_is_flow          <= 1'b0;
 
     for(i_f=0;i_f<FPW;i_f=i_f+1)begin
         data2rrp_stage_flit[i_f]    <= {128{1'b0}};
@@ -1108,6 +1161,8 @@ if(!res_n) begin
 end else begin
     tx_retry_finished   <= 1'b0;
     rf_cnt_retry        <= 1'b0;
+
+    data2rrp_stage_is_flow     <= 1'b0;
 
     //if there is a retry request coming set the ram address to last received rrp
     if(data2rtc_stage_force_tx_retry) begin
@@ -1125,7 +1180,7 @@ end else begin
         data2rrp_stage_flit_is_hdr      <= data2ram_flit_is_hdr;
         data2rrp_stage_flit_is_tail     <= data2ram_flit_is_tail;
         data2rrp_stage_flit_is_valid    <= data2ram_flit_is_valid;
-        data2rrp_stage_flit_is_flow     <= data2ram_flit_is_flow;
+        data2rrp_stage_is_flow          <= data2ram_is_flow;
 
 
         //Switch to retry if requested
@@ -1153,14 +1208,12 @@ end else begin
                 data2rrp_stage_flit_is_hdr[i_f]     <= ram_r_data[i_f][128];
                 data2rrp_stage_flit_is_tail[i_f]    <= ram_r_data[i_f][128+1];
                 data2rrp_stage_flit_is_valid[i_f]   <= ram_r_data[i_f][128+2];
-                data2rrp_stage_flit_is_flow[i_f]    <= ram_r_data[i_f][128+3];
             end else begin
                 //And reset all other FLITs because they're not meant to be retransmitted
                 data2rrp_stage_flit[i_f]            <= {128{1'b0}};
                 data2rrp_stage_flit_is_hdr[i_f]     <= 1'b0;
                 data2rrp_stage_flit_is_tail[i_f]    <= 1'b0;
                 data2rrp_stage_flit_is_valid[i_f]   <= 1'b0;
-                data2rrp_stage_flit_is_flow[i_f]    <= 1'b0;
             end
         end
 
@@ -1212,7 +1265,7 @@ end else begin
         end
 
         //Increment the FRP by 1, It points to the next possible FLIT position -> retry will start there
-        if(data2rrp_stage_flit_is_tail[i_f] && !data2rrp_stage_flit_is_flow[i_f])begin
+        if(data2rrp_stage_flit_is_tail[i_f] && !data2rrp_stage_is_flow)begin
             data2crc_flit[i_f][64+15:64+8]  <= data2rrp_stage_flit[i_f][64+15:64+8] + 1;
         end
 
@@ -1241,8 +1294,8 @@ end
 //Retry Buffer
 generate
     for(f=0;f<FPW;f=f+1)begin : retry_buffer_gen
-        hmc_ram #(
-            .DATASIZE(128+4),      //FLIT + flow/valid/hdr/tail indicator
+        openhmc_ram #(
+            .DATASIZE(128+3),      //FLIT + flow/valid/hdr/tail indicator
             .ADDRSIZE(RAM_ADDR_SIZE)
         )
         retry_buffer_per_lane_I
@@ -1278,17 +1331,18 @@ tx_crc_combine_I
 generate
     for(n=0;n<NUM_LANES;n=n+1) begin : scrambler_gen
         tx_scrambler #(
-            .DWIDTH(LANE_WIDTH)
+            .LANE_WIDTH(LANE_WIDTH),
+            .HMC_RX_AC_COUPLED(HMC_RX_AC_COUPLED)
         )
         scrambler_I
         (
             .clk(clk),
             .res_n(res_n),
-            .load_lfsr(rf_scrambler_disable),
+            .disable_scrambler(rf_scrambler_disable),
             .seed(seed_lane[n]), // unique per lane
             .data_in(data_to_scrambler[n*LANE_WIDTH+LANE_WIDTH-1:n*LANE_WIDTH]),
             .data_out(phy_scrambled_data_out[n*LANE_WIDTH+LANE_WIDTH-1:n*LANE_WIDTH]),
-            .rf_run_length_enable(rf_run_length_enable),
+            .rf_run_length_enable(rf_run_length_enable && ~rf_scrambler_disable),
             .rf_run_length_bit_flip(bit_was_flipped[n])
         );
     end

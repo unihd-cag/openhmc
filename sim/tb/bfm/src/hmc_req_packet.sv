@@ -49,16 +49,51 @@
 
 class hmc_req_packet extends hmc_packet;
 `uvm_object_utils(hmc_req_packet)
-	constraint c_req_command { command >= HMC_WRITE_16 && command <= HMC_READ_128; }
-// 	constraint c_req_command_fix {command >= HMC_POSTED_WRITE_64 && command <= HMC_POSTED_WRITE_64;}
-//  	constraint c_req_command_fix {command >= HMC_WRITE_16 && command <= HMC_WRITE_128;}
- 	constraint c_req_command_fix {
-	 							(command >= HMC_WRITE_16 && command <= HMC_WRITE_128)
- 								||
- 								(command >= HMC_POSTED_WRITE_16 && command <= HMC_POSTED_WRITE_128)
- 								||
- 								(command >= HMC_READ_16 && command <= HMC_READ_128)
- 								;}
+
+	constraint req_command_c {
+		   command inside { 	HMC_WRITE_16,
+			   					HMC_WRITE_32,
+			   					HMC_WRITE_48,
+			   					HMC_WRITE_64,
+			   					HMC_WRITE_80,
+			   					HMC_WRITE_96,
+			   					HMC_WRITE_112,
+			   					HMC_WRITE_128,
+			   					
+			   					//HMC_MODE_WRITE,
+								HMC_BIT_WRITE,
+								HMC_DUAL_8B_ADDI,
+								HMC_SINGLE_16B_ADDI,
+			   					
+			   					HMC_POSTED_WRITE_16,
+			   					HMC_POSTED_WRITE_32,
+			   					HMC_POSTED_WRITE_48,
+			   					HMC_POSTED_WRITE_64,
+			   					HMC_POSTED_WRITE_80,
+			   					HMC_POSTED_WRITE_96,
+			   					HMC_POSTED_WRITE_112,
+			   					HMC_POSTED_WRITE_128,
+			   					HMC_POSTED_BIT_WRIT,
+			   					
+			   					HMC_POSTED_BIT_WRIT,
+								HMC_POSTED_DUAL_8B_ADDI,
+								HMC_POSTED_SINGLE_16B_ADDI,
+			   					
+			   					HMC_MODE_READ,
+			   					HMC_READ_16,
+			   					HMC_READ_32,
+			   					HMC_READ_48,
+			   					HMC_READ_64,
+			   					HMC_READ_80,
+			   					HMC_READ_96,
+			   					HMC_READ_112, 
+			   					HMC_READ_128
+			   
+			   				};
+		
+		
+	}
+
 
 	constraint c_zero_tail_fields {
 		return_token_count == 0; 

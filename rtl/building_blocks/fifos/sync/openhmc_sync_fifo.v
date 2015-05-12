@@ -35,23 +35,20 @@
  *   along with this source file.  If not, see <http://www.gnu.org/licenses/>.
  *
  *
- *  Module name: sync_fifo
+ *  Module name: openhmc_sync_fifo
  *
  */
 
 `default_nettype none
 
-module sync_fifo #(
+module openhmc_sync_fifo #(
 `ifdef CAG_ASSERTIONS
         parameter DISABLE_EMPTY_ASSERT      = 0,
-        parameter DISABLE_FULL_ASSERT       = 0,
         parameter DISABLE_SHIFT_OUT_ASSERT  = 0,
         parameter DISABLE_XCHECK_ASSERT     = 0,
 `endif
         parameter DATASIZE                  = 8,
-        parameter ADDRSIZE                  = 8,
-        parameter GATE_SHIFT_IN             = 0,
-        parameter CHAIN_ENABLE              = 0
+        parameter ADDRSIZE                  = 8
     ) (
         //----------------------------------
         //----SYSTEM INTERFACE
@@ -77,7 +74,7 @@ module sync_fifo #(
 //=====================================================================================================
 
 wire si, so;    // internal gated shift signals
-reg full, full_r1, full_r2;
+reg full_r1, full_r2;
 wire full_1, full_2, full_3;
 reg full_m2, full_m1;
 
@@ -146,16 +143,8 @@ end
 
     assign empty = !full_3; // if the last stage is empty, the fifo is empty
 
-    generate // gating of si and so, just for compatability!!!
-        if (GATE_SHIFT_IN) begin : shift_in_gated
-            assign si = shift_in && !full;
-        end
-        else begin : shift_in_raw
-            assign si = shift_in;
-        end
-
-            assign so = shift_out;
-    endgenerate
+    assign si = shift_in;
+    assign so = shift_out;
 
     wire [ADDRSIZE:0] fifo_ram_count = wa_m - ra_m;
 
@@ -203,53 +192,26 @@ end
         end
     end
 
-    // Calculate full as two spaces left in the RAM before si and !so
-    wire [ADDRSIZE:0] const_f_next = -2; //After si the RAM will be full
-
-    always @ (posedge clk or negedge res_n) begin
-        if (!res_n) begin
-            full <= 1'b0;
-        end else begin
-            if ((fifo_ram_count[ADDRSIZE-1:0] == const_f_next[ADDRSIZE-1:0]) && si && !so) begin
-                full <= 1'b1;
-            end
-            if ((full == 1'b1) && !si && so) begin
-                full <= 1'b0;
-            end
-        end
-    end
-
-wire stage4_full;
-    generate
-        if (CHAIN_ENABLE) begin : chaining_enabled
-            assign stage4_full = next_stage_full;
-        end
-        else begin : chaining_disabled
-            assign stage4_full = 1'b1; // this is the last stage
-        end
-    endgenerate
-
-
 //=====================================================================================================
 //-----------------------------------------------------------------------------------------------------
 //---------INSTANTIATIONS HERE-------------------------------------------------------------------------
 //-----------------------------------------------------------------------------------------------------
 //=====================================================================================================
-sync_fifo_reg_stage #(.DWIDTH(DATASIZE))
+openhmc_sync_fifo_reg_stage #(.DWIDTH(DATASIZE))
     sync_fifo_reg_stage_3_I (
         .clk(clk),
         .res_n(res_n),
         .d_in(d_in),
         .d_in_p(d_out_2),
         .p_full(full_2),
-        .n_full(stage4_full),
+        .n_full(1'b1),
         .si(si),
         .so(so),
         .full(full_3),
         .d_out(d_out_3)
     );
 
-hmc_ram #(
+openhmc_ram #(
     .DATASIZE(DATASIZE),    // Memory data word width
     .ADDRSIZE(ADDRSIZE),    // Number of memory address bits
     .PIPELINED(1)
@@ -266,22 +228,15 @@ hmc_ram #(
 
 
 `ifdef CAG_ASSERTIONS
-    shift_in_and_full:          assert property (@(posedge clk) disable iff(!res_n) (shift_in |-> !full));
 
-    if (DISABLE_SHIFT_OUT_ASSERT == 0 && CHAIN_ENABLE == 0)
+    if (DISABLE_SHIFT_OUT_ASSERT == 0)
         shift_out_and_empty:    assert property (@(posedge clk) disable iff(!res_n) (shift_out |-> !empty));
 
     if (DISABLE_XCHECK_ASSERT == 0)
     dout_known:                 assert property (@(posedge clk) disable iff(!res_n) (!empty |-> !$isunknown(d_out)));
-    if (DISABLE_XCHECK_ASSERT == 0)
 
     final
     begin
-        if (DISABLE_FULL_ASSERT == 0)
-        begin
-            full_set_assert:                assert (!full);
-        end
-
         if (DISABLE_EMPTY_ASSERT == 0)
         begin
             empty_not_set_assert:           assert (empty);

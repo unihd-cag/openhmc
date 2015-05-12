@@ -35,13 +35,13 @@
  *   along with this source file.  If not, see <http://www.gnu.org/licenses/>.
  *
  *
- *  Module name: hmc_async_fifo
+ *  Module name: openhmc_async_fifo
  *
  */
 
 `default_nettype none
 
-module hmc_async_fifo #(
+module openhmc_async_fifo #(
         parameter DWIDTH                        = 8,
         parameter ENTRIES                       = 2,
         parameter DISABLE_FULL_ASSERT           = 0,

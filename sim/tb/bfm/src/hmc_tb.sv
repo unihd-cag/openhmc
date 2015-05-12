@@ -60,6 +60,8 @@ class hmc_tb #( parameter AXI4_DATA_BYTES=`AXI4BYTES, parameter AXI4_TUSER_WIDTH
 
 	axi4_stream_config axi4_rsp_config;
 	axi4_stream_config axi4_req_config;
+	
+	hmc_link_config link_cfg;
 
 	cag_rgm_rfs_env #(
 		.ADDR_WIDTH(`RFS_HMC_CONTROLLER_RF_AWIDTH),
@@ -125,6 +127,15 @@ class hmc_tb #( parameter AXI4_DATA_BYTES=`AXI4BYTES, parameter AXI4_TUSER_WIDTH
 			uvm_config_db#(axi4_stream_config)::set(this, "axi4_rsp", "axi4_stream_cfg", axi4_rsp_config);
 		end
 
+		
+		if (!uvm_config_db#(hmc_link_config)::get(this, "", "link_cfg", link_cfg)) begin
+			uvm_report_fatal(get_type_name(), $psprintf("hmc_link_config not set via config_db"));
+		end else begin
+			uvm_config_db#(hmc_link_config)::set(this, "v_seqr", "link_cfg", link_cfg);
+			
+			uvm_config_db#(hmc_link_config)::set(this, "hmc_module.hmc_req_mon", "link_cfg", link_cfg);
+			uvm_config_db#(hmc_link_config)::set(this, "hmc_module.hmc_rsp_mon", "link_cfg", link_cfg);
+		end
 
 		//-- create instances
 		axi4_req = axi4_stream_env #(.DATA_BYTES(AXI4_DATA_BYTES),.TUSER_WIDTH(AXI4_TUSER_WIDTH))::type_id::create("axi4_req",this);
@@ -169,6 +180,11 @@ class hmc_tb #( parameter AXI4_DATA_BYTES=`AXI4BYTES, parameter AXI4_TUSER_WIDTH
 		if ( !$cast(hmc_rsp_mon, hmc_module.hmc_rsp_mon))
 			`uvm_fatal(get_type_name(), $psprintf("error in hmc_rsp_mon scast"));
 		
+		hmc_rsp_mon.in_mb = tb_top.dut_I.hmc_bfm0.hmc_flit_top.mb_err2driver[0];
+		hmc_req_mon.in_mb = tb_top.dut_I.hmc_bfm0.hmc_flit_top.mb_err2retry[0];
+		
+		
+		
 		axi4_req.master.sequencer = axi4_req_seqr;
 		 
 		 
@@ -182,6 +198,7 @@ class hmc_tb #( parameter AXI4_DATA_BYTES=`AXI4BYTES, parameter AXI4_TUSER_WIDTH
 		//-- virtual sequencer
 		v_seqr.axi4_req_seqr = axi4_req_seqr;
 		v_seqr.rf_seqr_hmc   = rfs_hmc_I.sequencer;
+		
 		
 	endfunction : connect_phase
 

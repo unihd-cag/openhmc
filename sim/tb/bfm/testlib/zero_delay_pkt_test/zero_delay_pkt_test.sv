@@ -37,6 +37,41 @@
  *
  */
 
-`define RX_TOKENS 100
-`define HMC_TOKENS 100
-`define HMC_CUBID 0
+//
+//
+// zero_delay_pkt_test test
+//
+//
+
+// test description:
+//  add a description of the test here
+
+
+`ifndef zero_delay_pkt_test_SV
+`define zero_delay_pkt_test_SV
+
+class zero_delay_pkt_test extends hmc_base_test;
+
+	`uvm_component_utils(zero_delay_pkt_test)
+
+
+	function new(string name = "zero_delay_pkt_test", uvm_component parent = null);
+		super.new(name,parent);
+	endfunction : new
+
+
+	virtual function void build_phase(uvm_phase phase);
+
+		uvm_config_db#(uvm_object_wrapper)::set(this,"hmc_tb0.v_seqr.run_phase","default_sequence",zero_delay_pkt_test_seq::type_id::get());
+
+		super.build_phase(phase);
+
+	endfunction : build_phase
+	
+	task run_phase(uvm_phase phase);
+		phase.phase_done.set_drain_time(this, 1us);
+	endtask : run_phase
+
+endclass : zero_delay_pkt_test
+
+`endif // zero_delay_pkt_test_SV

@@ -62,10 +62,12 @@ module tb_top ();
 
 	`include "hmc_packet.sv"
 	`include "hmc_req_packet.sv"
+	//`include "hmc_req_posted_packet.sv"
 	`include "hmc_2_axi4_sequencer.sv"
 	`include "hmc_2_axi4_sequence.sv"
 	`include "tag_handler.sv"
-
+	
+	`include "hmc_link_config.sv"
 	`include "hmc_vseqr.sv"
 	
 	`include "axi4_stream_hmc_monitor.sv"
@@ -120,6 +122,9 @@ module tb_top ();
 		uvm_config_db#(pkt_analysis_port#())::set(null,"uvm_test_top.hmc_tb0.hmc_module.hmc_req_mon","mb_pkt",dut_I.hmc_bfm0.hmc_flit_top.mb_rsp_pkt[0]);
 		uvm_config_db#(pkt_analysis_port#())::set(null,"uvm_test_top.hmc_tb0.hmc_module.hmc_rsp_mon","mb_pkt",dut_I.hmc_bfm0.hmc_flit_top.mb_req_pkt[0]);
 		
+		//uvm_config_db#(pkt_analysis_port#())::set(null,"uvm_test_top.hmc_tb0.hmc_module.hmc_req_mon","mb_pkt",dut_I.hmc_bfm0.hmc_flit_top.mb_req_pkt_err_cov[0]);
+		//uvm_config_db#(pkt_analysis_port#())::set(null,"uvm_test_top.hmc_tb0.hmc_module.hmc_rsp_mon","mb_pkt",dut_I.hmc_bfm0.hmc_flit_top.mb_rsp_pkt_err_cov[0]);
+		
 		run_test();
 	end
 
@@ -127,11 +132,40 @@ module tb_top ();
 		clk_user		<= 1'b1;
 		clk_hmc_refclk  <= 1'b1;
 		res_n			<= 1'b0;
-		#5001ns res_n	<= 1'b1;
+		#1000ns 
+		@(posedge clk_user) res_n	<= 1'b1;
 	end
 
-	//-- 312.5MHz user Clock, keep it at least 312.5MHz so that it is >= clk_hmc in any configuration
-	always #1.6ns clk_user <= ~clk_user;
+	//-- Generate the user clock
+	always begin
+		case(`FPW)
+                2: begin
+                    if(`LOG_NUM_LANES==3) //8lanes
+                        #1.6ns clk_user = !clk_user;
+                    else begin
+                    	#0.8ns clk_user = !clk_user;
+                    end
+                end
+                4: begin
+                    if(`LOG_NUM_LANES==3) //8lanes
+                        #3.2ns clk_user = !clk_user;
+                    else
+                        #1.6ns clk_user = !clk_user;
+                end
+                6: begin
+                    if(`LOG_NUM_LANES==3) //8lanes
+                        #4.8ns clk_user = !clk_user;
+                    else
+                        #2.4ns clk_user = !clk_user;
+                end
+                8: begin
+                    if(`LOG_NUM_LANES==3) //8lanes
+                        #6.4ns clk_user = !clk_user;
+                    else
+                        #3.2ns clk_user = !clk_user;
+                end
+            endcase
+	end
 
 	//-- 125 MHz
 	always #4ns clk_hmc_refclk <= ~clk_hmc_refclk;

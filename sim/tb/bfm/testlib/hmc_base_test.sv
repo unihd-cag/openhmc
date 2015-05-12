@@ -45,6 +45,8 @@ class hmc_base_test extends uvm_test;
 	hmc_tb hmc_tb0;
 	axi4_stream_config axi4_req_config;
 	axi4_stream_config axi4_rsp_config;
+	
+	hmc_link_config link_cfg;
 
 	uvm_table_printer printer;
 
@@ -72,6 +74,13 @@ class hmc_base_test extends uvm_test;
 
 		uvm_report_info(get_type_name(), $psprintf("Setting the axi4_rsp config:\n"), UVM_LOW);
 		uvm_config_db#(axi4_stream_config)::set(this, "hmc_tb0", "axi4_rsp_config", axi4_rsp_config);
+		
+		//-- HMC link config
+		link_cfg = hmc_link_config::type_id::create("link_cfg",this);
+		void'(link_cfg.randomize());
+		
+		uvm_config_db#(hmc_link_config)::set(this, "hmc_tb0", "link_cfg", link_cfg);
+		
 
 		set_config_int("*", "recording_detail", UVM_FULL);
 		

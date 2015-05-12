@@ -80,8 +80,11 @@ class reg_hmc_controller_rf_status_init_c extends cag_rgm_register;
        bit [0:0] hmc_init_TS1_;
        bit [1:0] tx_init_status_;
        bit [0:0] all_descramblers_aligned_;
+       bit [7:0] rsvd_status_init_2_;
        bit [7:0] descrambler_aligned_;
+       bit [7:0] rsvd_status_init_1_;
        bit [7:0] descrambler_part_aligned_;
+       bit [7:0] rsvd_status_init_0_;
        bit [7:0] lane_descramblers_locked_;
    } pkd_flds_s;
 
@@ -105,14 +108,16 @@ endclass : reg_hmc_controller_rf_status_init_c
 class reg_hmc_controller_rf_control_c extends cag_rgm_register;
 
    typedef struct packed {
-       bit [7:0] bit_slip_time_;
+       bit [5:0] bit_slip_time_;
        bit [2:0] rsvd_control_3_;
        bit [4:0] irtry_to_send_;
        bit [2:0] rsvd_control_2_;
        bit [4:0] irtry_received_threshold_;
        bit [5:0] rsvd_control_1_;
        bit [9:0] rx_token_count_;
-       bit [6:0] rsvd_control_0_;
+       bit [4:0] rsvd_control_0_;
+       bit [0:0] debug_halt_on_tx_retry_;
+       bit [0:0] debug_halt_on_error_abort_;
        bit [0:0] debug_dont_send_tret_;
        bit [2:0] first_cube_ID_;
        bit [0:0] run_length_enable_;
@@ -137,9 +142,9 @@ class reg_hmc_controller_rf_control_c extends cag_rgm_register;
 endclass : reg_hmc_controller_rf_control_c
 
 //
-// Count of packets that had data errors but valid flow information
+// Posted requests sent to the HMC
 //
-class reg_hmc_controller_rf_poisoned_packets_c extends cag_rgm_register;
+class reg_hmc_controller_rf_sent_p_c extends cag_rgm_register;
 
    typedef struct packed {
        bit [63:0] cnt_;
@@ -147,17 +152,17 @@ class reg_hmc_controller_rf_poisoned_packets_c extends cag_rgm_register;
 
    `cag_rgm_register_fields(pkd_flds_s)
 
-   `uvm_object_utils_begin(reg_hmc_controller_rf_poisoned_packets_c)
+   `uvm_object_utils_begin(reg_hmc_controller_rf_sent_p_c)
        `uvm_field_int(fields,UVM_ALL_ON)
    `uvm_object_utils_end
 
-   function new(string name="reg_hmc_controller_rf_poisoned_packets_c");
+   function new(string name="reg_hmc_controller_rf_sent_p_c");
        super.new(name);
        this.name = name;
        set_address('h18);
    endfunction : new
 
-endclass : reg_hmc_controller_rf_poisoned_packets_c
+endclass : reg_hmc_controller_rf_sent_p_c
 
 //
 // Nonposted requests sent to the HMC
@@ -183,29 +188,6 @@ class reg_hmc_controller_rf_sent_np_c extends cag_rgm_register;
 endclass : reg_hmc_controller_rf_sent_np_c
 
 //
-// Posted requests sent to the HMC
-//
-class reg_hmc_controller_rf_sent_p_c extends cag_rgm_register;
-
-   typedef struct packed {
-       bit [63:0] cnt_;
-   } pkd_flds_s;
-
-   `cag_rgm_register_fields(pkd_flds_s)
-
-   `uvm_object_utils_begin(reg_hmc_controller_rf_sent_p_c)
-       `uvm_field_int(fields,UVM_ALL_ON)
-   `uvm_object_utils_end
-
-   function new(string name="reg_hmc_controller_rf_sent_p_c");
-       super.new(name);
-       this.name = name;
-       set_address('h28);
-   endfunction : new
-
-endclass : reg_hmc_controller_rf_sent_p_c
-
-//
 // Read requests sent to the HMC
 //
 class reg_hmc_controller_rf_sent_r_c extends cag_rgm_register;
@@ -223,10 +205,33 @@ class reg_hmc_controller_rf_sent_r_c extends cag_rgm_register;
    function new(string name="reg_hmc_controller_rf_sent_r_c");
        super.new(name);
        this.name = name;
-       set_address('h30);
+       set_address('h28);
    endfunction : new
 
 endclass : reg_hmc_controller_rf_sent_r_c
+
+//
+// Count of packets that had data errors but valid flow information
+//
+class reg_hmc_controller_rf_poisoned_packets_c extends cag_rgm_register;
+
+   typedef struct packed {
+       bit [63:0] cnt_;
+   } pkd_flds_s;
+
+   `cag_rgm_register_fields(pkd_flds_s)
+
+   `uvm_object_utils_begin(reg_hmc_controller_rf_poisoned_packets_c)
+       `uvm_field_int(fields,UVM_ALL_ON)
+   `uvm_object_utils_end
+
+   function new(string name="reg_hmc_controller_rf_poisoned_packets_c");
+       super.new(name);
+       this.name = name;
+       set_address('h30);
+   endfunction : new
+
+endclass : reg_hmc_controller_rf_poisoned_packets_c
 
 //
 // Responses received from the HMC
@@ -275,9 +280,9 @@ class reg_hmc_controller_rf_counter_reset_c extends cag_rgm_register;
 endclass : reg_hmc_controller_rf_counter_reset_c
 
 //
-// Count of re-transmit requests (seq num and bit errors)
+// Count of re-transmit requests
 //
-class reg_hmc_controller_rf_link_retries_c extends cag_rgm_register;
+class reg_hmc_controller_rf_tx_link_retries_c extends cag_rgm_register;
 
    typedef struct packed {
        bit [31:0] count_;
@@ -285,17 +290,40 @@ class reg_hmc_controller_rf_link_retries_c extends cag_rgm_register;
 
    `cag_rgm_register_fields(pkd_flds_s)
 
-   `uvm_object_utils_begin(reg_hmc_controller_rf_link_retries_c)
+   `uvm_object_utils_begin(reg_hmc_controller_rf_tx_link_retries_c)
        `uvm_field_int(fields,UVM_ALL_ON)
    `uvm_object_utils_end
 
-   function new(string name="reg_hmc_controller_rf_link_retries_c");
+   function new(string name="reg_hmc_controller_rf_tx_link_retries_c");
        super.new(name);
        this.name = name;
        set_address('h48);
    endfunction : new
 
-endclass : reg_hmc_controller_rf_link_retries_c
+endclass : reg_hmc_controller_rf_tx_link_retries_c
+
+//
+// Count of errors seen on RX
+//
+class reg_hmc_controller_rf_errors_on_rx_c extends cag_rgm_register;
+
+   typedef struct packed {
+       bit [31:0] count_;
+   } pkd_flds_s;
+
+   `cag_rgm_register_fields(pkd_flds_s)
+
+   `uvm_object_utils_begin(reg_hmc_controller_rf_errors_on_rx_c)
+       `uvm_field_int(fields,UVM_ALL_ON)
+   `uvm_object_utils_end
+
+   function new(string name="reg_hmc_controller_rf_errors_on_rx_c");
+       super.new(name);
+       this.name = name;
+       set_address('h50);
+   endfunction : new
+
+endclass : reg_hmc_controller_rf_errors_on_rx_c
 
 //
 // The number of bit_flips forced by the run length limiter
@@ -315,24 +343,49 @@ class reg_hmc_controller_rf_run_length_bit_flip_c extends cag_rgm_register;
    function new(string name="reg_hmc_controller_rf_run_length_bit_flip_c");
        super.new(name);
        this.name = name;
-       set_address('h50);
+       set_address('h58);
    endfunction : new
 
 endclass : reg_hmc_controller_rf_run_length_bit_flip_c
+
+//
+// Indicates the number of error abort modes not cleared in time
+//
+class reg_hmc_controller_rf_error_abort_not_cleared_c extends cag_rgm_register;
+
+   typedef struct packed {
+       bit [31:0] count_;
+   } pkd_flds_s;
+
+   `cag_rgm_register_fields(pkd_flds_s)
+
+   `uvm_object_utils_begin(reg_hmc_controller_rf_error_abort_not_cleared_c)
+       `uvm_field_int(fields,UVM_ALL_ON)
+   `uvm_object_utils_end
+
+   function new(string name="reg_hmc_controller_rf_error_abort_not_cleared_c");
+       super.new(name);
+       this.name = name;
+       set_address('h60);
+   endfunction : new
+
+endclass : reg_hmc_controller_rf_error_abort_not_cleared_c
 
 class rf_hmc_controller_rf_c extends cag_rgm_register_file;
 
    rand reg_hmc_controller_rf_status_general_c status_general;
    rand reg_hmc_controller_rf_status_init_c status_init;
    rand reg_hmc_controller_rf_control_c control;
-   rand reg_hmc_controller_rf_poisoned_packets_c poisoned_packets;
-   rand reg_hmc_controller_rf_sent_np_c sent_np;
    rand reg_hmc_controller_rf_sent_p_c sent_p;
+   rand reg_hmc_controller_rf_sent_np_c sent_np;
    rand reg_hmc_controller_rf_sent_r_c sent_r;
+   rand reg_hmc_controller_rf_poisoned_packets_c poisoned_packets;
    rand reg_hmc_controller_rf_rcvd_rsp_c rcvd_rsp;
    rand reg_hmc_controller_rf_counter_reset_c counter_reset;
-   rand reg_hmc_controller_rf_link_retries_c link_retries;
+   rand reg_hmc_controller_rf_tx_link_retries_c tx_link_retries;
+   rand reg_hmc_controller_rf_errors_on_rx_c errors_on_rx;
    rand reg_hmc_controller_rf_run_length_bit_flip_c run_length_bit_flip;
+   rand reg_hmc_controller_rf_error_abort_not_cleared_c error_abort_not_cleared;
 
    `uvm_object_utils(rf_hmc_controller_rf_c)
 
@@ -349,266 +402,36 @@ class rf_hmc_controller_rf_c extends cag_rgm_register_file;
        control = reg_hmc_controller_rf_control_c::type_id::create("control");
        control.set_address('h10);
        add_register(control);
-       poisoned_packets = reg_hmc_controller_rf_poisoned_packets_c::type_id::create("poisoned_packets");
-       poisoned_packets.set_address('h18);
-       add_register(poisoned_packets);
+       sent_p = reg_hmc_controller_rf_sent_p_c::type_id::create("sent_p");
+       sent_p.set_address('h18);
+       add_register(sent_p);
        sent_np = reg_hmc_controller_rf_sent_np_c::type_id::create("sent_np");
        sent_np.set_address('h20);
        add_register(sent_np);
-       sent_p = reg_hmc_controller_rf_sent_p_c::type_id::create("sent_p");
-       sent_p.set_address('h28);
-       add_register(sent_p);
        sent_r = reg_hmc_controller_rf_sent_r_c::type_id::create("sent_r");
-       sent_r.set_address('h30);
+       sent_r.set_address('h28);
        add_register(sent_r);
+       poisoned_packets = reg_hmc_controller_rf_poisoned_packets_c::type_id::create("poisoned_packets");
+       poisoned_packets.set_address('h30);
+       add_register(poisoned_packets);
        rcvd_rsp = reg_hmc_controller_rf_rcvd_rsp_c::type_id::create("rcvd_rsp");
        rcvd_rsp.set_address('h38);
        add_register(rcvd_rsp);
        counter_reset = reg_hmc_controller_rf_counter_reset_c::type_id::create("counter_reset");
        counter_reset.set_address('h40);
        add_register(counter_reset);
-       link_retries = reg_hmc_controller_rf_link_retries_c::type_id::create("link_retries");
-       link_retries.set_address('h48);
-       add_register(link_retries);
+       tx_link_retries = reg_hmc_controller_rf_tx_link_retries_c::type_id::create("tx_link_retries");
+       tx_link_retries.set_address('h48);
+       add_register(tx_link_retries);
+       errors_on_rx = reg_hmc_controller_rf_errors_on_rx_c::type_id::create("errors_on_rx");
+       errors_on_rx.set_address('h50);
+       add_register(errors_on_rx);
        run_length_bit_flip = reg_hmc_controller_rf_run_length_bit_flip_c::type_id::create("run_length_bit_flip");
-       run_length_bit_flip.set_address('h50);
+       run_length_bit_flip.set_address('h58);
        add_register(run_length_bit_flip);
+       error_abort_not_cleared = reg_hmc_controller_rf_error_abort_not_cleared_c::type_id::create("error_abort_not_cleared");
+       error_abort_not_cleared.set_address('h60);
+       add_register(error_abort_not_cleared);
    endfunction : new
 
 endclass : rf_hmc_controller_rf_c
-
-//
-// Pattern Generator Control Register
-//
-class reg_pattern_gen_rf_control_c extends cag_rgm_register;
-
-   typedef struct packed {
-       bit [2:0] cubID_size_;
-       bit [2:0] first_cube_ID_;
-       bit [0:0] hmc_gen_running_;
-       bit [0:0] hmc_gen_enable_;
-       bit [6:0] hmc_gen_read_ratio_;
-       bit [3:0] hmc_gen_write_size_;
-       bit [3:0] hmc_gen_read_size_;
-   } pkd_flds_s;
-
-   `cag_rgm_register_fields(pkd_flds_s)
-
-   `uvm_object_utils_begin(reg_pattern_gen_rf_control_c)
-       `uvm_field_int(fields,UVM_ALL_ON)
-   `uvm_object_utils_end
-
-   function new(string name="reg_pattern_gen_rf_control_c");
-       super.new(name);
-       this.name = name;
-       set_address('h80);
-   endfunction : new
-
-endclass : reg_pattern_gen_rf_control_c
-
-//
-// dummy
-//
-class reg_pattern_gen_rf_dummy_c extends cag_rgm_register;
-
-   typedef struct packed {
-       bit [3:0] dummy_;
-   } pkd_flds_s;
-
-   `cag_rgm_register_fields(pkd_flds_s)
-
-   `uvm_object_utils_begin(reg_pattern_gen_rf_dummy_c)
-       `uvm_field_int(fields,UVM_ALL_ON)
-   `uvm_object_utils_end
-
-   function new(string name="reg_pattern_gen_rf_dummy_c");
-       super.new(name);
-       this.name = name;
-       set_address('h88);
-   endfunction : new
-
-endclass : reg_pattern_gen_rf_dummy_c
-
-class rf_pattern_gen_rf_c extends cag_rgm_register_file;
-
-   rand reg_pattern_gen_rf_control_c control;
-   rand reg_pattern_gen_rf_dummy_c dummy;
-
-   `uvm_object_utils(rf_pattern_gen_rf_c)
-
-   function new(string name="rf_pattern_gen_rf_c");
-       super.new(name);
-       this.name = name;
-       set_address('h80);
-       control = reg_pattern_gen_rf_control_c::type_id::create("control");
-       control.set_address('h80);
-       add_register(control);
-       dummy = reg_pattern_gen_rf_dummy_c::type_id::create("dummy");
-       dummy.set_address('h88);
-       add_register(dummy);
-   endfunction : new
-
-endclass : rf_pattern_gen_rf_c
-
-//
-// General Reset controlable via i2c
-//
-class reg_res_rf_control_c extends cag_rgm_register;
-
-   typedef struct packed {
-       bit [0:0] res_n_;
-   } pkd_flds_s;
-
-   `cag_rgm_register_fields(pkd_flds_s)
-
-   `uvm_object_utils_begin(reg_res_rf_control_c)
-       `uvm_field_int(fields,UVM_ALL_ON)
-   `uvm_object_utils_end
-
-   function new(string name="reg_res_rf_control_c");
-       super.new(name);
-       this.name = name;
-       set_address('h90);
-   endfunction : new
-
-endclass : reg_res_rf_control_c
-
-//
-// dummy
-//
-class reg_res_rf_dummy_c extends cag_rgm_register;
-
-   typedef struct packed {
-       bit [0:0] dummy_;
-   } pkd_flds_s;
-
-   `cag_rgm_register_fields(pkd_flds_s)
-
-   `uvm_object_utils_begin(reg_res_rf_dummy_c)
-       `uvm_field_int(fields,UVM_ALL_ON)
-   `uvm_object_utils_end
-
-   function new(string name="reg_res_rf_dummy_c");
-       super.new(name);
-       this.name = name;
-       set_address('h98);
-   endfunction : new
-
-endclass : reg_res_rf_dummy_c
-
-class rf_res_rf_c extends cag_rgm_register_file;
-
-   rand reg_res_rf_control_c control;
-   rand reg_res_rf_dummy_c dummy;
-
-   `uvm_object_utils(rf_res_rf_c)
-
-   function new(string name="rf_res_rf_c");
-       super.new(name);
-       this.name = name;
-       set_address('h90);
-       control = reg_res_rf_control_c::type_id::create("control");
-       control.set_address('h90);
-       add_register(control);
-       dummy = reg_res_rf_dummy_c::type_id::create("dummy");
-       dummy.set_address('h98);
-       add_register(dummy);
-   endfunction : new
-
-endclass : rf_res_rf_c
-
-//
-// General Reset controlable via i2c
-//
-class reg_phy_rf_control_c extends cag_rgm_register;
-
-   typedef struct packed {
-       bit [0:0] lpm_en_;
-       bit [0:0] rx_res_n_;
-       bit [0:0] tx_res_n_;
-       bit [0:0] res_n_;
-   } pkd_flds_s;
-
-   `cag_rgm_register_fields(pkd_flds_s)
-
-   `uvm_object_utils_begin(reg_phy_rf_control_c)
-       `uvm_field_int(fields,UVM_ALL_ON)
-   `uvm_object_utils_end
-
-   function new(string name="reg_phy_rf_control_c");
-       super.new(name);
-       this.name = name;
-       set_address('ha0);
-   endfunction : new
-
-endclass : reg_phy_rf_control_c
-
-//
-// status
-//
-class reg_phy_rf_status_c extends cag_rgm_register;
-
-   typedef struct packed {
-       bit [7:0] cdr_locked_;
-   } pkd_flds_s;
-
-   `cag_rgm_register_fields(pkd_flds_s)
-
-   `uvm_object_utils_begin(reg_phy_rf_status_c)
-       `uvm_field_int(fields,UVM_ALL_ON)
-   `uvm_object_utils_end
-
-   function new(string name="reg_phy_rf_status_c");
-       super.new(name);
-       this.name = name;
-       set_address('ha8);
-   endfunction : new
-
-endclass : reg_phy_rf_status_c
-
-class rf_phy_rf_c extends cag_rgm_register_file;
-
-   rand reg_phy_rf_control_c control;
-   rand reg_phy_rf_status_c status;
-
-   `uvm_object_utils(rf_phy_rf_c)
-
-   function new(string name="rf_phy_rf_c");
-       super.new(name);
-       this.name = name;
-       set_address('ha0);
-       control = reg_phy_rf_control_c::type_id::create("control");
-       control.set_address('ha0);
-       add_register(control);
-       status = reg_phy_rf_status_c::type_id::create("status");
-       status.set_address('ha8);
-       add_register(status);
-   endfunction : new
-
-endclass : rf_phy_rf_c
-
-class rf_vc107_1hmc_8lane_top_rf_c extends cag_rgm_register_file;
-
-   rand rf_hmc_controller_rf_c hmc_controller_rf;
-   rand rf_pattern_gen_rf_c pattern_gen_rf;
-   rand rf_res_rf_c res_rf;
-   rand rf_phy_rf_c phy_rf;
-
-   `uvm_object_utils(rf_vc107_1hmc_8lane_top_rf_c)
-
-   function new(string name="rf_vc107_1hmc_8lane_top_rf_c");
-       super.new(name);
-       this.name = name;
-       set_address('h0);
-       hmc_controller_rf = rf_hmc_controller_rf_c::type_id::create("hmc_controller_rf");
-       add_register_file(hmc_controller_rf);
-       pattern_gen_rf = rf_pattern_gen_rf_c::type_id::create("pattern_gen_rf");
-       add_register_file(pattern_gen_rf);
-       res_rf = rf_res_rf_c::type_id::create("res_rf");
-       add_register_file(res_rf);
-       phy_rf = rf_phy_rf_c::type_id::create("phy_rf");
-       add_register_file(phy_rf);
-   endfunction : new
-
-endclass : rf_vc107_1hmc_8lane_top_rf_c
-

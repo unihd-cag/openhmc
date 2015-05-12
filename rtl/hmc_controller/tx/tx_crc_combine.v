@@ -77,15 +77,9 @@ module tx_crc_combine #(
 //------------------------------------------------------------------------------------General Assignments
 integer i_f;    //counts to FPW
 integer i_f2;   //counts to FPW inside another i_f loop
-integer i_f3;   //counts to FPW inside another i_f loop
 integer i_c;    //depth of the crc data pipeline
 
 genvar f, f2;
-
-//------------------------------------------------------------------------------------Local params for parameterization
-localparam CRC_WIDTH            = 32;
-localparam CRC_DATA_PIPE_DEPTH  = 3;
-localparam NUM_32BIT_CHUNKS     = FPW*FPW;
 
 //------------------------------------------------------------------------------------Split input data into FLITs
 wire  [128-1:0]       d_in_flit   [FPW-1:0];
@@ -95,7 +89,7 @@ generate
     end
 endgenerate
 
-reg  [128-1:0]          d_in_flit_dly         [FPW-1:0]; 
+reg  [3:0]              d_in_flit_lng_dly     [FPW-1:0]; 
 reg  [DWIDTH-1:0]       d_in_data_dly;
 reg  [FPW-1:0]          d_in_tail_dly;
 reg  [FPW-1:0]          d_in_hdr_dly;
@@ -107,40 +101,38 @@ reg                     swap_crc;
 //Retrieve the target crc from the header and assign to corresponding tail
 reg  [LOG_FPW-1:0]      target_crc_per_tail         [FPW-1:0];
 reg  [LOG_FPW-1:0]      target_crc_per_tail1        [FPW-1:0];
-reg  [LOG_FPW-1:0]      target_crc_per_tail2        [FPW-1:0];
 reg  [LOG_FPW-1:0]      target_crc_per_tail_comb    [FPW-1:0];
 reg  [LOG_FPW-1:0]      target_crc_comb;
 reg  [LOG_FPW-1:0]      target_crc_temp;
 
 //------------------------------------------------------------------------------------CRC Modules Input stage
-wire [CRC_WIDTH-1:0]    crc_init_out      [FPW-1:0];
-reg  [CRC_WIDTH-1:0]    crc_accu_in       [(FPW*FPW)-1:0];
-reg  [FPW-1:0]          crc_accu_in_valid [FPW-1:0];
-reg  [FPW-1:0]          crc_accu_clear;
-wire [CRC_WIDTH-1:0]    crc_per_flit      [FPW-1:0];
+wire [31:0]    crc_init_out      [FPW-1:0];
+reg  [31:0]    crc_accu_in       [FPW-1:0];
+reg  [FPW-1:0] crc_accu_in_valid [FPW-1:0];
+reg  [FPW-1:0] crc_accu_in_tail  [FPW-1:0];
+wire [31:0]    crc_per_flit      [FPW-1:0];
 
 
 //------------------------------------------------------------------------------------Inter CRC stage
 reg  [3:0]                  payload_remain [FPW-1:0];
 
-wire [(FPW*CRC_WIDTH)-1:0] crc_accu_in_combined [FPW-1:0];
+wire [(FPW*32)-1:0] crc_accu_in_combined [FPW-1:0];
 generate
     for(f=0;f<FPW;f=f+1) begin
         for(f2=0;f2<FPW;f2=f2+1) begin
-            assign crc_accu_in_combined[f][(f2*CRC_WIDTH)+CRC_WIDTH-1:(f2*CRC_WIDTH)] = crc_accu_in[(f*FPW)+f2];
+            assign crc_accu_in_combined[f][(f2*32)+31:(f2*32)] = crc_accu_in_valid[f][f2] ? crc_accu_in[f2] : 32'h0;
         end
     end
 endgenerate 
 
-
 //------------------------------------------------------------------------------------Data Pipeline signals
-reg  [DWIDTH-1:0]       crc_data_pipe_in_data                               [CRC_DATA_PIPE_DEPTH-1:0];
-reg  [FPW-1:0]          crc_data_pipe_in_tail                               [CRC_DATA_PIPE_DEPTH-1:0];
+reg  [DWIDTH-1:0]       crc_data_pipe_in_data                               [1:0];
+reg  [FPW-1:0]          crc_data_pipe_in_tail                               [1:0];
 wire [128-1:0]          crc_data_pipe_out_data_flit                         [FPW-1:0];
 
 generate
     for(f = 0; f < (FPW); f = f + 1) begin : assign_data_pipe_output
-        assign crc_data_pipe_out_data_flit[f]                        = crc_data_pipe_in_data[CRC_DATA_PIPE_DEPTH-1][(f*128)+128-1:f*128];
+        assign crc_data_pipe_out_data_flit[f]                        = crc_data_pipe_in_data[1][(f*128)+128-1:f*128];
     end
 endgenerate
 
@@ -257,14 +249,14 @@ always @(posedge clk or negedge res_n)  begin `else
 always @(posedge clk)  begin `endif
 if(!res_n) begin
     for(i_f=0;i_f<FPW;i_f=i_f+1)begin
-        d_in_flit_dly[i_f]  <= {128{1'b0}};
+        d_in_flit_lng_dly[i_f]  <= 4'h0;
     end
     d_in_data_dly <= {DWIDTH{1'b0}};
     d_in_tail_dly <= {FPW{1'b0}};
     d_in_hdr_dly  <= {FPW{1'b0}};
 end else begin
     for(i_f=0;i_f<FPW;i_f=i_f+1)begin
-        d_in_flit_dly[i_f]  <= d_in_flit[i_f];
+        d_in_flit_lng_dly[i_f]  <= lng(d_in_flit[i_f]);
     end
     d_in_data_dly <= d_in_data;
     d_in_tail_dly <= d_in_tail;
@@ -279,41 +271,31 @@ end
 always @(posedge clk or negedge res_n)  begin `else
 always @(posedge clk)  begin `endif
 if(!res_n) begin
-    crc_accu_clear <= 1'b0;
-
-    for(i_f=0;i_f<NUM_32BIT_CHUNKS;i_f=i_f+1)begin
-        crc_accu_in[i_f] <= {CRC_WIDTH{1'b0}};
-    end
-
     for(i_f=0;i_f<FPW;i_f=i_f+1)begin
+        crc_accu_in[i_f] <= {32{1'b0}};
         crc_accu_in_valid[i_f]  <= {FPW{1'b0}};
+        crc_accu_in_tail[i_f]  <= {FPW{1'b0}};
         payload_remain[i_f]     <= 4'h0;
     end
 end else begin
-    //First reset
-    crc_accu_clear <= 1'b0;
-
-    for(i_f=0;i_f<NUM_32BIT_CHUNKS;i_f=i_f+1)begin
-        crc_accu_in[i_f] <= {CRC_WIDTH{1'b0}};
-    end    
 
     for(i_f=0;i_f<FPW;i_f=i_f+1)begin
+        crc_accu_in[i_f] <= crc_init_out[i_f];
         crc_accu_in_valid[i_f]  <= 4'h0;
+        crc_accu_in_tail[i_f]  <= 4'h0;
     end
 
     for(i_f=0;i_f<FPW;i_f=i_f+1)begin
     //First go through accu crcs
 
-        if(|payload_remain[i_f]) begin
-            for(i_f2=0;i_f2<FPW;i_f2=i_f2+1)begin                               
-                crc_accu_in[(i_f*FPW)+i_f2]     <= crc_init_out[i_f2];
-            end
+        if(|payload_remain[i_f]) begin    
 
             if(payload_remain[i_f] > FPW) begin
                 crc_accu_in_valid[i_f]  <= {FPW{1'b1}};
                 payload_remain[i_f]     <= payload_remain[i_f]-FPW;
             end else begin
                 crc_accu_in_valid[i_f]  <= {FPW{1'b1}} >> (FPW-payload_remain[i_f]);
+                crc_accu_in_tail[i_f]   <= 1'b1 << (payload_remain[i_f]-1);
                 payload_remain[i_f]     <= 4'h0;                    
             end
         end
@@ -322,18 +304,12 @@ end else begin
             if(i_f==d_in_flit_target_crc[i_f2] && d_in_hdr_dly[i_f2]) begin
             //Then go through all input crcs from the init crc and find the crc's that must be assigned to the currently selected crc
 
-                for(i_f3=i_f2;i_f3<FPW;i_f3=i_f3+1)begin                               
-                    crc_accu_in[(i_f*FPW)+i_f3-i_f2]      <= crc_init_out[i_f3];
-                end
-
-                crc_accu_clear[i_f]   <= 1'b1;
-
-                if( (i_f2+lng(d_in_flit_dly[i_f2])) >FPW ) begin 
-                    payload_remain[i_f] <= lng(d_in_flit_dly[i_f2])-FPW+i_f2;
-                    crc_accu_in_valid[i_f]   <=  {FPW{1'b1}} >> i_f2;
+                if( (i_f2+d_in_flit_lng_dly[i_f2]) >FPW ) begin 
+                    payload_remain[i_f] <= (d_in_flit_lng_dly[i_f2]-FPW+i_f2);
+                    crc_accu_in_valid[i_f]   <=  {FPW{1'b1}} >> i_f2 << i_f2;
                 end else begin
-                    crc_accu_in_valid[i_f]   <=  ({FPW{1'b1}} >> (FPW-i_f2-lng(d_in_flit_dly[i_f2])) ) 
-                                                 >> i_f2;
+                    crc_accu_in_tail[i_f] <= 1'b1 << d_in_flit_lng_dly[i_f2]+i_f2-1;
+                    crc_accu_in_valid[i_f]   <=  ({FPW{1'b1}} >> (FPW-i_f2-d_in_flit_lng_dly[i_f2])) >> i_f2 << i_f2;
                 end
             end
 
@@ -349,21 +325,19 @@ end
 always @(posedge clk or negedge res_n)  begin `else
 always @(posedge clk)  begin `endif
 if(!res_n) begin
-    for(i_c=0;i_c<CRC_DATA_PIPE_DEPTH;i_c=i_c+1)begin
+    for(i_c=0;i_c<2;i_c=i_c+1)begin
         crc_data_pipe_in_data[i_c]       <= {DWIDTH{1'b0}};
         crc_data_pipe_in_tail[i_c]       <= {FPW{1'b0}};
     end
 
     for(i_f = 0; i_f < (FPW); i_f = i_f + 1) begin
         target_crc_per_tail1[i_f] <= 3'h0;
-        target_crc_per_tail2[i_f] <= 3'h0;
     end
 end else begin
 
     //We keep the tails per FLIT so they are not part of the data pipe
     for(i_f = 0; i_f < (FPW); i_f = i_f + 1) begin
         target_crc_per_tail1[i_f] <= target_crc_per_tail[i_f];
-        target_crc_per_tail2[i_f] <= target_crc_per_tail1[i_f];
     end
 
     //Set the first stage of the data pipeline
@@ -371,7 +345,7 @@ end else begin
     crc_data_pipe_in_tail[0]       <= d_in_tail_dly;
 
     //Data Pipeline propagation
-    for(i_c=0;i_c<(CRC_DATA_PIPE_DEPTH-1);i_c=i_c+1)begin
+    for(i_c=0;i_c<(1);i_c=i_c+1)begin
         crc_data_pipe_in_data[i_c+1]       <= crc_data_pipe_in_data[i_c];
         crc_data_pipe_in_tail[i_c+1]       <= crc_data_pipe_in_tail[i_c];
     end
@@ -397,8 +371,8 @@ end else begin
 
         data_rdy_flit[i_f]  <= crc_data_pipe_out_data_flit[i_f];
 
-        if(crc_data_pipe_in_tail[CRC_DATA_PIPE_DEPTH-1][i_f])begin    //Finally add the crc
-            data_rdy_flit[i_f][128-1:128-32] <= crc_per_flit[target_crc_per_tail2[i_f]];
+        if(crc_data_pipe_in_tail[1][i_f])begin    //Finally add the crc
+            data_rdy_flit[i_f][128-1:128-32] <= crc_per_flit[target_crc_per_tail1[i_f]];
         end
     end
 end
@@ -432,7 +406,7 @@ generate
         (
             .clk(clk),
             .res_n(res_n),
-            .clear(crc_accu_clear[f]),
+            .tail(crc_accu_in_tail[f]),
             .d_in(crc_accu_in_combined[f]),
             .valid(crc_accu_in_valid[f]),
             .crc_out(crc_per_flit[f])

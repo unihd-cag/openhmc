@@ -40,8 +40,6 @@
 `ifndef HMC_INIT_SEQ
 `define HMC_INIT_SEQ
 
-`include "config.h"
-
 class hmc_init_seq extends hmc_base_seq;
 
 	// hmc_link_config link_config;
@@ -58,25 +56,34 @@ class hmc_init_seq extends hmc_base_seq;
 	int timeout = 0;
 
 	task body();
-		
+
 		//-- configure the HMC controller
-		reg_hmc_controller_rf_control_c control;
-		reg_hmc_controller_rf_status_general_c status;
+		reg_hmc_controller_rf_control_c 		control;
+		reg_hmc_controller_rf_status_general_c 	status;
+		reg_hmc_controller_rf_status_init_c 	status_init;
 
 		`uvm_info(get_type_name(), "Running init sequence", UVM_NONE)
+
 
 		$cast(control,p_sequencer.rf_seqr_hmc.get_by_name("control"));
 		control.set_check_on_read(1'b0);
 		p_sequencer.rf_seqr_hmc.read_reg(control);
 
-		control.fields.first_cube_ID_ = `HMC_CUBID;
-		control.fields.rx_token_count_ = `RX_TOKENS;
-		control.fields.scrambler_disable_ = 0;
-		control.fields.bit_slip_time_ = 72;
-		control.fields.set_hmc_sleep_ = 0;
-		control.fields.run_length_enable_ = 1;
+		control.fields.first_cube_ID_ 		= p_sequencer.link_cfg.cube_id;
+		control.fields.rx_token_count_ 		= p_sequencer.link_cfg.rx_tokens;
+		control.fields.scrambler_disable_ 	= ~p_sequencer.link_cfg.cfg_scram_enb;
+		control.fields.bit_slip_time_ 		= 40;
+		control.fields.set_hmc_sleep_ 		= 0;
+		control.fields.run_length_enable_ 	= ~p_sequencer.link_cfg.cfg_scram_enb;
+		control.fields.irtry_to_send_ 		= p_sequencer.link_cfg.cfg_init_retry_txcnt*4;
+		control.fields.irtry_received_threshold_ = p_sequencer.link_cfg.cfg_init_retry_rxcnt;
 
 		p_sequencer.rf_seqr_hmc.write_reg(control);
+
+		//Dummy Read to status init
+		$cast(status_init,p_sequencer.rf_seqr_hmc.get_by_name("status_init"));
+		status_init.set_check_on_read(1'b0);
+		p_sequencer.rf_seqr_hmc.read_reg(status_init);
 
 		//-- Wait until the PHY is ready
 		$cast(status,p_sequencer.rf_seqr_hmc.get_by_name("status_general"));

@@ -55,6 +55,9 @@ class hmc_2_axi4_sequence #(parameter DATA_BYTES = 16, parameter TUSER_WIDTH = 1
 	rand hmc_req_packet hmc_items[];
 	hmc_packet hmc_packets_ready[$];
 	
+	int working_pos = 0;
+	
+	
 	typedef bit [1+1+1+127:0] tail_header_flit_t;
 	tail_header_flit_t flit_queue[$];
 	rand int tag = 0;
@@ -128,8 +131,9 @@ class hmc_2_axi4_sequence #(parameter DATA_BYTES = 16, parameter TUSER_WIDTH = 1
 	 	
 	 	int unsigned pkts_in_cycle = 0;		//-- HMC tails inserted in current AXI4 cycle
 	 	int unsigned header_in_cycle = 0;		//-- HMC headers inserted in current AXI4 cycle
+	 	int unsigned valids_in_cycle = 0;
 		hmc_packet hmc_pkt;
-		bit first_pkt = 1;
+		//bit first_pkt = 1;
 	 	
 	 
 	
@@ -142,7 +146,7 @@ class hmc_2_axi4_sequence #(parameter DATA_BYTES = 16, parameter TUSER_WIDTH = 1
 		`uvm_create_on(axi4_item, p_sequencer)
 			axi4_item.tdata = 0;
 			axi4_item.tuser = 0;
-			axi4_item.delay = hmc_packets_ready[0].flit_delay / FPW; // measured in flits
+			axi4_item.delay = hmc_packets_ready[0].flit_delay / FPW; //-- measured in flits
 		//`uvm_info(get_type_name(),$psprintf("delay for axi4_cycle 0 is %0d", axi4_item.delay), UVM_MEDIUM)
 		
 		while (hmc_packets_ready.size() >0 )  begin		
@@ -158,57 +162,69 @@ class hmc_2_axi4_sequence #(parameter DATA_BYTES = 16, parameter TUSER_WIDTH = 1
 				
 				current_flit = flit_queue.pop_front();
 				
-				if (first_pkt) begin
-					if (current_flit[128]) begin //-- If current flit is header
-						flit_offset+= hmc_pkt.flit_delay;
+				//if (first_pkt) begin
+					if (current_flit[128]) begin 	//-- If current flit is header
+						flit_offset += hmc_pkt.flit_delay;
 					end
-					first_pkt = 0;
-				end
+					//first_pkt = 0;
+				//end
 				
 				//-- check if axi4_item is full
 				if ((flit_offset >= FPW) || pkts_in_cycle == max_pkts_per_cycle  ) begin 
 					//-- push full axi item to axi4_queue
 					`uvm_info(get_type_name(),$psprintf("axi4_item is full (offset = %0d), writing element %0d to queue ", flit_offset, axi4_queue.size()), UVM_MEDIUM)
+					
+					if (valids_in_cycle != 0)
 					axi4_queue.push_back(axi4_item);
 					
 					//-- create new AXI4 cycle
 					`uvm_create_on(axi4_item, p_sequencer)
 					axi4_item.tdata = 0;
 					axi4_item.tuser = 0;
+					
+					//-- set AXI4 cycle delay
 					axi4_item.delay = (flit_offset / FPW) -1;	//-- flit offset contains also empty flits
 					if (flit_offset % FPW >0)
-						axi4_item.delay +=1;
+						axi4_item.delay += 1;
+					
+					//-- reset counter
 					`uvm_info(get_type_name(),$psprintf("HMC Packets in last cycle: %0d, %0d", pkts_in_cycle, header_in_cycle), UVM_HIGH)
-					pkts_in_cycle = 0;	//-- reset HMC packet counter in AXI4 Cycle
+					pkts_in_cycle 	= 0;	//-- reset HMC packet counter in AXI4 Cycle
 					header_in_cycle = 0;
+					valids_in_cycle = 0;
 					`uvm_info(get_type_name(),$psprintf("axi_delay is %0d", axi4_item.delay), UVM_MEDIUM)
 					
 					//-- reset flit_offset
-					flit_offset=0;
+					flit_offset = 0;
 				end
 			
 				
 
 				//-- write flit to axi4_item
-				for (int i =0;i<128;i++) begin//write flit to cycle
+				for (int i =0;i<128;i++) begin
 					axi4_item.tdata[(flit_offset*128)+i] = current_flit[i];
 				end
 				
+				
+				//-- Write tuser flags
 				//-- write valid
-				axi4_item.tuser[VALIDS	+flit_offset] =current_flit[130];	//-- valid[fpw-1:0]
+				axi4_item.tuser[VALIDS	+flit_offset] = current_flit[130];	//-- valid [fpw-1:0]
 				//-- write header
 				axi4_item.tuser[HEADERS	+flit_offset] = current_flit[128]; 	//-- only 1 if header
-				//-- write footer
+				//-- write tail
 				axi4_item.tuser[TAILS	+flit_offset] = current_flit[129];	//-- only 1 if tail
 				
-				if(current_flit[129]) begin
+				valids_in_cycle ++;
+				
+				
+				if(current_flit[129]) begin		//-- count tails in current cycle
 					pkts_in_cycle ++;
 				end
 				
-				if(current_flit[128]) begin
+				if(current_flit[128]) begin		//-- count headers in current cycle
 					header_in_cycle ++;
 				end
-					
+				
 				//-- debugging output
 				if(current_flit[128]) begin
 					`uvm_info(get_type_name(),$psprintf("FLIT is header at pos %d", flit_offset), UVM_MEDIUM)
@@ -217,7 +233,7 @@ class hmc_2_axi4_sequence #(parameter DATA_BYTES = 16, parameter TUSER_WIDTH = 1
 					`uvm_info(get_type_name(),$psprintf("FLIT is tail at pos %d", flit_offset), UVM_MEDIUM)
 				end
 				
-				//-- insert empty flits between packets
+				
 				
 				
 				flit_offset++;
@@ -228,52 +244,83 @@ class hmc_2_axi4_sequence #(parameter DATA_BYTES = 16, parameter TUSER_WIDTH = 1
 	
  	endfunction : hmc_packet_2_axi_cycles
 	
-	task body();		
-		axi4_stream_valid_cycle #(.DATA_BYTES(DATA_BYTES),.TUSER_WIDTH(TUSER_WIDTH)) axi4_item;
-		int working_pos = 0;
-		
-		`uvm_info(get_type_name(),$psprintf("HMC Packets to send: %0d", hmc_items.size()), UVM_MEDIUM)
-
-		while (hmc_items.size-1 > working_pos)begin //-- cycle until all hmc_packets have been sent
-		
-			for (int i = working_pos; i < hmc_items.size(); i++) begin //-- get a tag for each packet
+	
+	
+	task aquire_tags();
+		for (int i = working_pos; i < hmc_items.size(); i++) begin //-- get a tag for each packet
 				//-- only register an tag if response required! 
-				if (hmc_items[i].get_command_type() == HMC_WRITE_TYPE ||
-					hmc_items[i].get_command_type() == HMC_MISC_WRITE_TYPE ||
-					hmc_items[i].get_command_type() == HMC_READ_TYPE ||
-					hmc_items[i].get_command_type() == HMC_MODE_READ_TYPE)
-				begin 
-					p_sequencer.handler.try_get_tag(tag);
-					`uvm_info(get_type_name(),$psprintf("Tag for HMC Packet %0d is: %0d", i, tag), UVM_MEDIUM)
+				if 	(hmc_items[i].get_command_type() == HMC_WRITE_TYPE		||
+					 hmc_items[i].get_command_type() == HMC_MISC_WRITE_TYPE ||
+					 hmc_items[i].get_command_type() == HMC_READ_TYPE 		||
+					 hmc_items[i].get_command_type() == HMC_MODE_READ_TYPE)
+				begin
+				/*	if (hmc_items[i].tag >= 0 ) begin	
+						p_sequencer.handler.try_get_tag(tag);
+					end else begin		//-- blocking wait if last tag was error tag
+						p_sequencer.handler.get_tag(tag);
+					end
+				*/
+				p_sequencer.handler.get_tag(tag);
 				end else begin
 					tag = 0;
 					// void'(randomize(tag)); //-- can be used to randomize the tag 
-					`uvm_info(get_type_name(),$psprintf("Tag for HMC Packet Type %0d is: %0d", hmc_items[i].get_command_type(), tag), UVM_HIGH)
 				end
+				
+				hmc_items[i].tag = tag;
+				
+				//-- move packet to ready queue if tag valid
 				if (tag >= 0) begin
-					hmc_items[i].tag = tag;
+					
+					`uvm_info(get_type_name(),$psprintf("Tag for HMC Packet Type %0d is: %0d", hmc_items[i].get_command_type(), hmc_items[i]), UVM_HIGH)
 					hmc_packets_ready.push_back(hmc_items[i]);
 					working_pos = i+1;
 				end else begin
 					break;	//-- send all already processed AXI4 Cycles if tag_handler can not provide an additional tag
 				end
 			end
+		
+	endtask : aquire_tags
+		
+	task send_axi4_cycles();
+		axi4_stream_valid_cycle #(.DATA_BYTES(DATA_BYTES),.TUSER_WIDTH(TUSER_WIDTH)) axi4_item;
+		while( axi4_queue.size() > 0 ) begin
+					`uvm_info(get_type_name(),$psprintf("axi4_queue contains %0d items", axi4_queue.size()), UVM_MEDIUM)
+			
+					axi4_item = axi4_queue.pop_front();
+					
+					
+					if ((axi4_item.tuser == {{(TUSER_WIDTH){1'b0}}})) begin
+						axi4_item.print();
+						`uvm_fatal("AXI4_Master_Driver", "sent an empty cycle")
+					end
+					`uvm_send(axi4_item);
+			
+					`uvm_info(get_type_name(),$psprintf("\n%s", axi4_item.sprint()), UVM_HIGH)
+				end
+		
+		
+	endtask : send_axi4_cycles
+	
+	task body();		
+		
+	
+		
+		
+		`uvm_info(get_type_name(),$psprintf("HMC Packets to send: %0d", hmc_items.size()), UVM_MEDIUM)
+		
 
+		while (hmc_items.size-1 >= working_pos)begin //-- cycle until all hmc_packets have been sent
+			//-- try to aquire a tag for each non posted packet
+			aquire_tags();
 
+			//-- send all packets with tags
 			if (hmc_packets_ready.size()>0) begin
 
 				//-- generate axi4_queue
 				hmc_packet_2_axi_cycles();
 
 				//-- send axi4_queue
-				while( axi4_queue.size() > 0 ) begin
-					`uvm_info(get_type_name(),$psprintf("axi4_queue contains %0d items", axi4_queue.size()), UVM_MEDIUM)
-			
-					axi4_item = axi4_queue.pop_front();
-					`uvm_send(axi4_item);
-			
-					`uvm_info(get_type_name(),$psprintf("\n%s", axi4_item.sprint()), UVM_HIGH)
-				end
+				send_axi4_cycles();
 			end 
 		end
 	endtask : body
