@@ -69,6 +69,8 @@ class axi4_stream_master_agent #(parameter DATA_BYTES = 16, parameter TUSER_WIDT
 
 		if (!uvm_config_db#(axi4_stream_config)::get(this, "", "axi4_stream_cfg", axi4_stream_cfg)) begin
 			uvm_report_fatal(get_type_name(), $psprintf("axi4_stream_cfg not set via config_db"));
+		end else begin
+			uvm_config_db#(axi4_stream_config)::set(this, "driver"	, "axi4_stream_cfg", axi4_stream_cfg);			//distributing axi4_stream_cfg to master driver
 		end
 
 		if(axi4_stream_cfg.master_active == UVM_ACTIVE)begin	//-- distribute axi4_stream_cfg to driver

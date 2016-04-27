@@ -50,7 +50,7 @@ class hmc_packet extends uvm_sequence_item;
 
 	// request header fields
 	rand bit [2:0]			cube_ID;				// CUB
-	rand bit [33:0]			address;				// ADRS
+	rand bit [33:0]		address;				// ADRS
 	rand bit [8:0]			tag;					// TAG
 	rand bit [3:0]			packet_length;			// LNG 128-bit (16-byte) flits
 	rand bit [3:0]			duplicate_length;		// DLN
@@ -64,7 +64,7 @@ class hmc_packet extends uvm_sequence_item;
 	rand bit [2:0]			sequence_number;		// SEQ
 	rand bit [7:0]			forward_retry_pointer;	// FRP
 	rand bit [7:0]			return_retry_pointer;	// RRP
-	rand bit [31:0]			packet_crc;				// CRC
+	rand bit [31:0]		packet_crc;				// CRC
 
 	// response header fields not used before
 	rand bit [8:0]			return_tag;				// TGA (Optional)
@@ -83,6 +83,8 @@ class hmc_packet extends uvm_sequence_item;
 
 	// helper fields
 	rand int				flit_delay;
+	
+	int						timestamp;
 
 	`uvm_object_utils_begin(hmc_packet)
 		`uvm_field_int(flit_delay, UVM_ALL_ON | UVM_NOPACK | UVM_DEC | UVM_NOCOMPARE | UVM_DEC)
@@ -106,10 +108,14 @@ class hmc_packet extends uvm_sequence_item;
 		`uvm_field_int(crc_error, UVM_ALL_ON | UVM_NOPACK | UVM_DEC)
 	`uvm_object_utils_end
 
-	//constraint c_payload_size { packet_length == 1 || payload.size() == packet_length - 1; }
 	constraint c_poisoned { poisoned == 0; }
 	constraint c_cube_id {cube_ID ==0;}
-	constraint c_address {address ==0;}
+	constraint c_address {
+		soft address < 80000000;
+		((command & `HMC_TYPE_MASK) == HMC_FLOW_TYPE) -> address == 0;	
+		soft address[3:0]==4'h0;
+	}
+	constraint c_source_link_ID {source_link_ID ==0;}
 	constraint c_crc_error { crc_error == 0; }
 	constraint c_matching_length { packet_length == duplicate_length; }
 	constraint c_return_tag { return_tag == 0; }
@@ -143,6 +149,30 @@ class hmc_packet extends uvm_sequence_item;
 	constraint c_flit_delay {
 		soft flit_delay dist{0:/90, [1:8]:/8, [8:200]:/2  };
 	}
+	constraint c_error_status {
+		soft error_status == 0;
+	}
+	
+	constraint c_data_invalid {
+		soft data_invalid == 0;
+	}
+	
+	
+	constraint c_pret {
+		(command == HMC_PRET)-> forward_retry_pointer	==0;
+		(command == HMC_PRET)-> sequence_number			==0;
+	}
+	constraint c_irtry{
+		(command == HMC_IRTRY) 							-> start_retry 			!= clear_error_abort;
+		((command == HMC_IRTRY)&&(start_retry)) 		->forward_retry_pointer == 1;
+		((command == HMC_IRTRY)&&(clear_error_abort))	->forward_retry_pointer == 2;
+		(command == HMC_IRTRY)							-> sequence_number		== 0;
+	}
+	
+	constraint c_flow {
+		((command & `HMC_TYPE_MASK) == HMC_FLOW_TYPE) -> tag == 0;
+		((command & `HMC_TYPE_MASK) == HMC_FLOW_TYPE) -> cube_ID == 0;
+	}
 	
 	function new (string name = "hmc_packet");
 		super.new(name);
@@ -157,7 +187,6 @@ class hmc_packet extends uvm_sequence_item;
 			`uvm_fatal(get_type_name(),$psprintf("post_randomize packet_length = %0d",packet_length))
 
 		`uvm_info("AXI Packet queued",$psprintf("%0s packet_length = %0d",command.name(), packet_length), UVM_HIGH)
-		
 		
 		if (packet_length < 2)
 			return;
@@ -175,8 +204,6 @@ class hmc_packet extends uvm_sequence_item;
 		if ((command == HMC_MODE_WRITE)|| (command == HMC_MODE_READ)) begin
 			payload[0][127:32] = 96'b0;
 		end
-
-
     endfunction
 
 	function hmc_command_type get_command_type();
@@ -216,25 +243,16 @@ class hmc_packet extends uvm_sequence_item;
 */
 
 	function bit [31:0] calculate_crc();
-		bit [32:0] polynomial = 33'h1741B8CD7; // Normal
-		bit [32:0] remainder = 33'h0;
 		bit bitstream[];
-		int bits_packed=0;
-
-		bits_packed = pack(bitstream);
-		packer_succeeded : assert (bits_packed > 0);
-
-/*
-		if (bits_packed > 128) begin //DEBUG
-			bit [127:0] flits[9];
-			for( int i=0; i < bits_packed; i++)
-				flits[i/128][i%128] = bitstream[i];
-			for( int i=0; i < bits_packed/128; i++)
-				`uvm_info(get_type_name(),$psprintf("calculate_crc flits[%0x] %0x",i,flits[i]), UVM_HIGH)
-		end
-*/
-
-		for( int i=0; i < bits_packed-32; i++ ) begin	// without the CRC
+		packer_succeeded : assert (pack(bitstream) > 0);
+		return calc_crc(bitstream);
+	endfunction : calculate_crc
+	
+	function bit [31:0] calc_crc(bit bitstream[]);
+		bit [32:0] polynomial = 33'h1741B8CD7; // Normal
+		
+		bit [32:0] remainder = 33'h0;
+		for( int i=0; i < bitstream.size()-32; i++ ) begin	// without the CRC
 			remainder = {remainder[31:0], bitstream[i]};
 			if( remainder[32] ) begin
 				remainder = remainder ^ polynomial;
@@ -249,8 +267,7 @@ class hmc_packet extends uvm_sequence_item;
 		end
 
 		return remainder[31:0];
-
-	endfunction : calculate_crc
+	endfunction : calc_crc
 
 	virtual function void do_pack(uvm_packer packer);
 
@@ -267,12 +284,12 @@ class hmc_packet extends uvm_sequence_item;
 					HMC_IRTRY:		packer.pack_field ( {3'h0, 3'h0, 34'h0, 9'h0, duplicate_length[3:0], packet_length[3:0], 1'b0, command[5:0]}, 64);
 					default: uvm_report_fatal(get_type_name(), $psprintf("pack function called for a hmc_packet with an illegal FLOW type='h%0h!", command));
 				endcase
-			HMC_READ_TYPE:			packer.pack_field ( {cube_ID[2:0], 3'h0, 34'h0, tag[8:0], duplicate_length[3:0], packet_length[3:0], 1'b0, command[5:0]}, 64);
-			HMC_MODE_READ_TYPE:		packer.pack_field ( {cube_ID[2:0], 3'h0, address[33:0], tag[8:0], duplicate_length[3:0], packet_length[3:0], 1'b0, command[5:0]}, 64);
+			HMC_READ_TYPE:			packer.pack_field ( {cube_ID[2:0], 3'h0, address[33:0], tag[8:0], duplicate_length[3:0], packet_length[3:0], 1'b0, command[5:0]}, 64);
+			HMC_MODE_READ_TYPE:		packer.pack_field ( {cube_ID[2:0], 3'h0, 34'h0, tag[8:0], duplicate_length[3:0], packet_length[3:0], 1'b0, command[5:0]}, 64);
 			HMC_POSTED_WRITE_TYPE:	packer.pack_field ( {cube_ID[2:0], 3'h0, address[33:0], tag[8:0], duplicate_length[3:0], packet_length[3:0], 1'b0, command[5:0]}, 64);
 			HMC_WRITE_TYPE:			packer.pack_field ( {cube_ID[2:0], 3'h0, address[33:0], tag[8:0], duplicate_length[3:0], packet_length[3:0], 1'b0, command[5:0]}, 64);
 			HMC_POSTED_MISC_WRITE_TYPE:	packer.pack_field ( {cube_ID[2:0], 3'h0, address[33:0], tag[8:0], duplicate_length[3:0], packet_length[3:0], 1'b0, command[5:0]}, 64);
-			HMC_MISC_WRITE_TYPE:	packer.pack_field ( {cube_ID[2:0], 3'h0, 34'h0, tag[8:0], duplicate_length[3:0], packet_length[3:0], 1'b0, command[5:0]}, 64);
+			HMC_MISC_WRITE_TYPE:	packer.pack_field ( {cube_ID[2:0], 3'h0, address[33:0], tag[8:0], duplicate_length[3:0], packet_length[3:0], 1'b0, command[5:0]}, 64);
 			HMC_RESPONSE_TYPE:		packer.pack_field ( {22'h0, source_link_ID[2:0], 6'h0, return_tag[8:0], tag[8:0], duplicate_length[3:0], packet_length[3:0], 1'b0, command[5:0]}, 64);
 			default: uvm_report_fatal(get_type_name(), $psprintf("pack function called for a hmc_packet with an illegal command type='h%0h!", command));
 		endcase
@@ -308,6 +325,7 @@ class hmc_packet extends uvm_sequence_item;
 
 	virtual function void do_unpack(uvm_packer packer);
 		bit [63:0]	header;
+		bit [63:0]	tail;
 		bit [31:0]	calculated_crc;
 		bit [21:0]	rsvd22;
 		bit [5:0]	rsvd6;
@@ -315,18 +333,26 @@ class hmc_packet extends uvm_sequence_item;
 		bit [2:0]	rsvd3;
 		bit 		rsvd1;
 
+		bit bitstream[];
+
 		super.do_unpack(packer);
 		packer.big_endian = 0;
 
+		packer.get_bits(bitstream);
+		
+		for (int i = 0; i <32; i++)begin
+			packet_crc[i] = bitstream[bitstream.size()-32 +i];
+		end
+		
+		calculated_crc = calc_crc(bitstream);
 		// header
 		header = packer.unpack_field(64);
-		command[5:0] = header[5:0];
+		command[5:0] = header[5:0];//-- doppelt?
 
 		if (get_command_type != HMC_RESPONSE_TYPE)
 			{cube_ID[2:0], rsvd3, address[33:0], tag[8:0], duplicate_length[3:0], packet_length[3:0], rsvd1, command[5:0]}	= header;
 		else
 			{rsvd22[21:0], source_link_ID[2:0], rsvd6[5:0], return_tag[8:0], tag[8:0], duplicate_length[3:0], packet_length[3:0], rsvd1, command[5:0]}	= header;
-
 		// Unpack should not be called with length errors
 		if (duplicate_length != packet_length || packet_length == 0)
 			`uvm_fatal(get_type_name(), $psprintf("do_unpack: length mismatch dln=%0d len=%0d cmd=%0d!", duplicate_length, packet_length, command));
@@ -336,20 +362,22 @@ class hmc_packet extends uvm_sequence_item;
 			payload.push_back(packer.unpack_field(128));
 
 		// tail
-		if (get_command_type != HMC_RESPONSE_TYPE)
-			{packet_crc[31:0], return_token_count[4:0], source_link_ID[2:0], rsvd5, sequence_number[2:0], forward_retry_pointer[7:0], return_retry_pointer[7:0]}	= packer.unpack_field(64);
+		tail = packer.unpack_field(64);
+		if (get_command_type != HMC_RESPONSE_TYPE) 
+			{packet_crc[31:0], return_token_count[4:0], source_link_ID[2:0], rsvd5, sequence_number[2:0], forward_retry_pointer[7:0], return_retry_pointer[7:0]}	= tail;
 		else
-			{packet_crc[31:0], return_token_count[4:0], error_status[6:0], data_invalid, sequence_number[2:0], forward_retry_pointer[7:0], return_retry_pointer[7:0]}	= packer.unpack_field(64);
+			{packet_crc[31:0], return_token_count[4:0], error_status[6:0], data_invalid, sequence_number[2:0], forward_retry_pointer[7:0], return_retry_pointer[7:0]}	= tail;
 
 		start_retry			= (command == HMC_IRTRY ? forward_retry_pointer[0] : 1'b0);
 		clear_error_abort	= (command == HMC_IRTRY ? forward_retry_pointer[1] : 1'b0);
 
-		calculated_crc = calculate_crc();
+		crc_error = 0;
 
-		// Inverted CRC means poisoned
 		poisoned = (packet_crc == ~calculated_crc) ? 1'b1 : 1'b0;
-
-		crc_error = (packet_crc != calculated_crc && !poisoned) ? 1'b1 : 1'b0;
+		if (packet_crc != calculated_crc &&  !poisoned )
+		begin
+			crc_error = 1;
+		end
 	endfunction : do_unpack
 
 

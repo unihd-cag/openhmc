@@ -44,6 +44,12 @@
 class axi4_stream_slave_driver #(parameter DATA_BYTES = 16, parameter TUSER_WIDTH = 16) extends uvm_driver #(hmc_packet);
 
 	axi4_stream_config axi4_stream_cfg;
+	rand int block_cycles;
+	
+	
+	constraint c_block_cycles {
+		soft block_cycles dist{0:/30,[1:5]:/41, [6:15]:/25, [16:10000]:/4};
+	}
 
 	virtual interface axi4_stream_if #(.DATA_BYTES(DATA_BYTES), .TUSER_WIDTH(TUSER_WIDTH)) vif;
 	
@@ -66,12 +72,14 @@ class axi4_stream_slave_driver #(parameter DATA_BYTES = 16, parameter TUSER_WIDT
 		end else begin
 			`uvm_fatal(get_type_name(),"vif is not set")
 		end
+		
+		if (!uvm_config_db#(axi4_stream_config)::get(this, "", "axi4_stream_cfg", axi4_stream_cfg)) begin
+			uvm_report_fatal(get_type_name(), $psprintf("axi4_stream_cfg not set via config_db"));
+		end
 	endfunction : build_phase
 
 	task run_phase(uvm_phase phase);
-		bit ready_asserted = 0;
-		bit last_valid = 0;
-		int set_probability;
+
 
 		super.run_phase(phase);
 
@@ -84,23 +92,34 @@ class axi4_stream_slave_driver #(parameter DATA_BYTES = 16, parameter TUSER_WIDT
 			fork
 				forever begin
 					//-- Accept packets
-					@(negedge vif.ACLK);
+					@(posedge vif.ACLK);
 
-					set_probability_randomization : assert (std::randomize(set_probability) with {set_probability >= 0 && set_probability < 10;});
-
-					//-- Higher probability to be ready when the master has something to send
-					if (ready_asserted == 0 && vif.TVALID == 1 && set_probability > 3) begin
-						ready_asserted = 1;
-					//-- Can be ready when the master has nothing to send
-					end else if (ready_asserted == 0 && vif.TVALID == 0 && set_probability > 8) begin
-						ready_asserted = 1;
-					//-- Only become not ready after accepting something
-					end else if (ready_asserted == 1 && vif.TVALID == 1 && set_probability > 3) begin
-						ready_asserted = 0;
-					end
+					if(axi4_stream_cfg.open_rsp_mode==UVM_ACTIVE) begin
+						vif.TREADY <= 1'b1;	
+					end else begin 
+					
+					if (vif.TVALID)
+						randcase
+							3 : vif.TREADY <= 1;
+							1 : vif.TREADY <= 0;
+						endcase
+					else 
+						randcase
+							1 : vif.TREADY <= 1;
+							1 : vif.TREADY <= 0;
+							1 : begin		//-- hold tready at least until tvalid is set
+									vif.TREADY <= 0;
+									void'(this.randomize());
+									while (vif.TVALID == 0)
+										@(posedge vif.ACLK);
+									
+									repeat(block_cycles) @(posedge vif.ACLK); //-- wait 2 additional cycles
+									
+								end
+						endcase
+					
 							
-					vif.TREADY <= ready_asserted;	
-					last_valid = vif.TVALID == 1'b1;
+					end
 				end
 				begin //-- Asynchronous reset
 					@(negedge vif.ARESET_N);

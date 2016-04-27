@@ -46,14 +46,14 @@
 `ifndef AXI4_STREAM_IF_SV
 `define AXI4_STREAM_IF_SV
 
-interface axi4_stream_if #(parameter DATA_BYTES = 16, parameter TUSER_WIDTH = 16) (
-	input logic ACLK,    //-- Clock (All signals sampled on the rising edge)
-	input logic ARESET_N //-- Global Reset
-	);
+interface axi4_stream_if #(parameter DATA_BYTES = 16, parameter TUSER_WIDTH = 16) ();
 	
 	//--
 	//-- Interface signals
 	//--
+
+	logic ACLK;    //-- Clock (All signals sampled on the rising edge)
+	logic ARESET_N; //-- Global Reset
 
 	logic TVALID;	// Master valid
 	logic TREADY;	// Slave ready
@@ -69,11 +69,11 @@ interface axi4_stream_if #(parameter DATA_BYTES = 16, parameter TUSER_WIDTH = 16
 	logic [DATA_BYTES/16-1:0] DEBUG_HEADERS;	//-- contains the HMC-HEADER Flags
 	logic [DATA_BYTES/16-1:0] DEBUG_TAILS;		//-- contains the HMC-TAIL Flags
 	
+	
 	//-- assigning the debug signals to TUSER
 	assign DEBUG_VALIDS = TUSER[1*(DATA_BYTES /16)-1: (0* DATA_BYTES /16)];
 	assign DEBUG_HEADERS = TUSER[2*(DATA_BYTES /16)-1: (1* DATA_BYTES /16)];
 	assign DEBUG_TAILS = TUSER[3*(DATA_BYTES /16)-1: (2* DATA_BYTES /16)];
-	
 	
 	//--
 	//-- Interface Coverage
@@ -166,11 +166,11 @@ interface axi4_stream_if #(parameter DATA_BYTES = 16, parameter TUSER_WIDTH = 16
 	//
 	//endproperty
 
-	chk_reset_tvalid	: assert property (
-		//-- TVALID must be inactive during Reset
-		@(posedge ACLK)
-		!ARESET_N |-> TVALID == 1'b0
-	);
+	// chk_reset_tvalid	: assert property (
+	// 	//-- TVALID must be inactive during Reset
+	// 	@(posedge ACLK)
+	// 	!ARESET_N |-> TVALID == 1'b0
+	// );
 
 
 	chk_valid_hold 		: assert property (
@@ -205,8 +205,23 @@ interface axi4_stream_if #(parameter DATA_BYTES = 16, parameter TUSER_WIDTH = 16
 			|=>	(TVALID == 1) throughout 	( $countones(DEBUG_HEADERS) < $countones(DEBUG_TAILS) )[->1]
 	);
 
+	time clk_rise;
+	time reset_rise;
 
-
+	always @(posedge ACLK) begin	
+		if(ARESET_N == 0)
+			clk_rise <= $time();
+	end
+	
+	always @(posedge ARESET_N) begin
+		reset_rise <= $time();
+	end
+	
+	//TODO TODO ADD
+	// check_sync_reset : assert property (
+	// 	@(posedge ACLK)
+	// 	$rose(ARESET_N) |=> (reset_rise == clk_rise)
+	// 	);
 
 	property data_hold_p;
 		//-- if TVALID is set TDATA must not be changed until TREADY

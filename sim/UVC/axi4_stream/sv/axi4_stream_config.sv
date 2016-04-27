@@ -44,10 +44,12 @@ class axi4_stream_config extends uvm_object;
 
 	uvm_active_passive_enum master_active = UVM_PASSIVE;
 	uvm_active_passive_enum slave_active  = UVM_PASSIVE;
+	uvm_active_passive_enum open_rsp_mode = UVM_PASSIVE;
 
 	`uvm_object_utils_begin(axi4_stream_config)
 		`uvm_field_enum(uvm_active_passive_enum, master_active, UVM_DEFAULT)
 		`uvm_field_enum(uvm_active_passive_enum, slave_active,  UVM_DEFAULT)
+		`uvm_field_enum(uvm_active_passive_enum, open_rsp_mode,  UVM_DEFAULT)
 	`uvm_object_utils_end
 
 	function new(string name = "axi4_stream_config");

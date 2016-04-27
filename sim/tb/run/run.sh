@@ -50,8 +50,8 @@ then
     exit 1
 fi
 
-export CAG_TB_DIR=${OPENHMC_SIM}/tb/bfm
-export CAG_DUT="openhmc_behavioral_bfm"
+export CAG_TB_DIR=${OPENHMC_SIM}/tb/uvc
+export CAG_DUT="openhmc_behavioral_uvc"
 
 #-----------------------------------------------------------------
 
@@ -74,7 +74,7 @@ echo "*                 *******************************************************"
 echo "*                 *                                                     *"
 echo "*                 *      openHMC Verification Environment               *"
 echo "*                 *                                                     *"
-echo "*                 *                                                     *"
+echo "*                 *      using CAG HMC Verification Model               *"
 echo "*                 *                                                     *"
 echo "*                 *******************************************************"
 echo ""

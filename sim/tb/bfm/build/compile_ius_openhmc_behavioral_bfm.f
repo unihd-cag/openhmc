@@ -38,10 +38,16 @@
 
 ###Include Sources
 #Behavioral serializer and routing models
--f ${OPENHMC_SIM}/tb/bfm/src/serdes/behavioral/serdes_behavioral.f
+-f ${OPENHMC_SIM}/tb/common/src/serdes/behavioral/serdes_behavioral.f
 
 #Source top TB, HW, and DUT
--f ${OPENHMC_SIM}/tb/bfm/build/compile_tb_openhmc.f
--f ${OPENHMC_SIM}/tb/bfm/build/compile_hw_openhmc.f
+#Micron BFM model
+-f ${OPENHMC_SIM}/bfm/hmc_bfm.f
++incdir+${OPENHMC_SIM}/bfm
+-f ${OPENHMC_SIM}/tb/common/build/compile_tb_openhmc.f
+-f ${OPENHMC_SIM}/tb/common/build/compile_hw_openhmc.f
++incdir+${OPENHMC_SIM}/tb/bfm/testlib
++incdir+${OPENHMC_SIM}/tb/bfm/src
 ${OPENHMC_SIM}/tb/bfm/src/tb_top_bfm.sv
 ${OPENHMC_SIM}/tb/bfm/src/targets/dut_openhmc_behavioral_bfm.sv
+

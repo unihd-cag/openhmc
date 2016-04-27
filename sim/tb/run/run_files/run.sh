@@ -39,7 +39,7 @@
 #!/bin/bash
 
 function print_help {
-	printf "Usage: %s: [-c] [-d DUT] [-f FPW] [-g] [-l NUM_LANES] [o] [-q] [-p] [-s SEED] [-t TEST_NAME] [-v UVM_VERBOSITY] -?\n" $(basename $0) >&2
+	printf "Usage: %s: [-c] [-d DUT] [-f FPW] [-g] [-l NUM_LANES] [-o] [-q] [-a] [-r] [-s SEED] [-t TEST_NAME] [-v UVM_VERBOSITY] -?\n" $(basename $0) >&2
 }
 
 #-----------------------------------------------------------------
@@ -54,6 +54,9 @@ num_lanes="default"
 log_num_lanes="3"
 fpw="default"
 log_fpw="2"
+num_axi_bytes="64"
+open_rsp="0"
+async_fifos="0"
 
 do_clean_up=
 tflag="0"
@@ -63,14 +66,15 @@ verbosity="UVM_LOW"
 use_gui=
 input_file="-input ${CAG_TB_DIR}/build/ncsim.tcl"
 seed=""
-num_axi_bytes="64"
 enable_coverage=""
 
 
 #-- parse options
-while getopts 'cgot:v:d:s:l:f:q?' OPTION
+while getopts 'acgort:v:d:s:l:f:q?' OPTION
 do
 	case $OPTION in
+		a)  async_fifos="1"
+			;;
 		c)	do_clean_up=1
 			;;
 		d)	export CAG_DUT=${OPTARG}
@@ -82,17 +86,19 @@ do
 			;;
 		l)	num_lanes="${OPTARG}"
 			;;
+		o)	enable_coverage="-coverage all -covoverwrite"
+			;;
+		q)	input_file=""
+			verbosity="UVM_NONE"
+			;;			
+		r)	open_rsp="1"
+			;;
 		s)  seed="+svseed+${OPTARG}"
 			;;
 		t)	tflag="1"
 			test_name="$OPTARG"
 			;;
 		v)	verbosity="$OPTARG"
-			;;
-		o)	enable_coverage="-coverage all -covoverwrite"
-			;;
-		q)	input_file=""
-			verbosity="UVM_NONE"
 			;;
 		?)	print_help
 			exit 2
@@ -160,6 +166,18 @@ then
 	test_name="simple_test"
 fi
 
+#-- Open Response
+if [ "$open_rsp" == "1" ]
+then
+	printf "*** OPEN RESPONSE LOOP MODE ***\n"
+fi
+
+#-- Async FIFOs
+if [ "$open_rsp" == "1" ]
+then
+	printf "*** Using Asynchronous FIFOs ***\n"
+fi
+
 #-- select DUT
 if [ "$dflag" == "0" ]
 then
@@ -185,5 +203,8 @@ irun ${input_file} \
 	-f ${CAG_TB_COMPILE_IUS} \
 	${enable_coverage} \
 	-access +rwc \
+	"-define OPEN_RSP_MODE=$open_rsp" \
+	"-define OPENHMC_ASYNC_FIFOS=$async_fifos" \
+	-timescale 1ns/1ps \
 	${use_gui} "+UVM_TESTNAME=${test_name}" "+UVM_VERBOSITY=${verbosity}" ${seed} \
 	"-define LOG_NUM_LANES=$log_num_lanes -define FPW=$fpw -define LOG_FPW=$log_fpw -define AXI4BYTES=$num_axi_bytes" $*

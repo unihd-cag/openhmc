@@ -62,7 +62,8 @@ class hmc_base_test extends uvm_test;
 		//-- AXI4 request config
 		axi4_req_config = axi4_stream_config::type_id::create("axi4_req_config", this);
 		axi4_req_config.master_active = UVM_ACTIVE;
-		axi4_req_config.slave_active = UVM_PASSIVE;
+		axi4_req_config.slave_active  = UVM_PASSIVE;
+		axi4_req_config.open_rsp_mode  = UVM_PASSIVE;
 
 		uvm_report_info(get_type_name(), $psprintf("Setting the axi4_req config:\n"), UVM_LOW);
 		uvm_config_db#(axi4_stream_config)::set(this, "hmc_tb0", "axi4_req_config", axi4_req_config);
@@ -71,12 +72,14 @@ class hmc_base_test extends uvm_test;
 		axi4_rsp_config = axi4_stream_config::type_id::create("axi4_rsp_config", this);
 		axi4_rsp_config.master_active = UVM_PASSIVE;
 		axi4_rsp_config.slave_active = UVM_ACTIVE;
+		axi4_rsp_config.open_rsp_mode = `OPEN_RSP_MODE==1 ? UVM_ACTIVE : UVM_PASSIVE;
 
 		uvm_report_info(get_type_name(), $psprintf("Setting the axi4_rsp config:\n"), UVM_LOW);
 		uvm_config_db#(axi4_stream_config)::set(this, "hmc_tb0", "axi4_rsp_config", axi4_rsp_config);
 		
 		//-- HMC link config
 		link_cfg = hmc_link_config::type_id::create("link_cfg",this);
+		link_cfg.cfg_rsp_open_loop = `OPEN_RSP_MODE==1 ? UVM_ACTIVE : UVM_PASSIVE;
 		void'(link_cfg.randomize());
 		
 		uvm_config_db#(hmc_link_config)::set(this, "hmc_tb0", "link_cfg", link_cfg);
@@ -104,10 +107,6 @@ class hmc_base_test extends uvm_test;
 		phase.phase_done.set_drain_time(this, 10us);
 	endtask : run_phase
 
-	//function void report_phase(uvm_phase phase);
-	//    report_summarize();
-	//endfunction : report_phase
-
 endclass : hmc_base_test
 
 
@@ -118,7 +117,7 @@ class hmc_base_seq extends uvm_sequence;
 	endfunction : new
 
 	`uvm_object_utils(hmc_base_seq)
-	`uvm_declare_p_sequencer(hmc_vseqr)
+	`uvm_declare_p_sequencer(vseqr)
 
 	virtual task pre_body();
 		if(starting_phase != null)

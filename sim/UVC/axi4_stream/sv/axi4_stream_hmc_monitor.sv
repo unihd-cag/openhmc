@@ -154,8 +154,8 @@ class axi4_stream_hmc_monitor #(parameter DATA_BYTES = 16, parameter TUSER_WIDTH
 			end
 
 		end
-
-		`uvm_info(get_type_name(),$psprintf("%d header and %d tails available", headers_seen, tails_seen)  ,UVM_HIGH)
+		if(|vc.tuser)
+			`uvm_info(get_type_name(),$psprintf("%d header and %d tails available", headers_seen, tails_seen)  ,UVM_HIGH)
 
 
 
@@ -174,6 +174,8 @@ class axi4_stream_hmc_monitor #(parameter DATA_BYTES = 16, parameter TUSER_WIDTH
 		current_flit = flit_queue.pop_front();
 		no_length_mismatches_allowed : assert (current_flit[14:11] == current_flit[10:7]); 	//--check internal hmc_packet length
 		current_packet_length = current_flit[10:7];
+		`uvm_info(get_type_name(),$psprintf("packet length %0d ", current_packet_length), UVM_HIGH)
+		`uvm_info(get_type_name(),$psprintf("queue size %0d ", flit_queue.size()), UVM_HIGH)
 		flit_queue_underflow2 : assert (flit_queue.size() >= current_packet_length - 1);		//--check check hmc_packet complete received
 
 
@@ -227,14 +229,9 @@ class axi4_stream_hmc_monitor #(parameter DATA_BYTES = 16, parameter TUSER_WIDTH
 
 		hmc_packet packet;
 
-
-		`uvm_info(get_type_name(),$psprintf("got valid cycle"), UVM_HIGH)
-
 		collect_flits(vc);
 
-
-		`uvm_info(get_type_name(),$psprintf("got %0d tails and %0d flits",tails_seen, flit_queue.size() ), UVM_HIGH)
-
+		//`uvm_info(get_type_name(),$psprintf("got %0d tails and %0d flits",tails_seen, flit_queue.size() ), UVM_HIGH)
 
 		//-- Convert flit_queue to hmc_packets
 		while (tails_seen >0) begin

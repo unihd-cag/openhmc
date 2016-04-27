@@ -73,7 +73,9 @@ wire [DWIDTH-1:0]       from_deserializers;
 wire [NUM_LANES-1:0]    bit_slip;
 wire [NUM_LANES-1:0]    phy_lane_polarity;
 bit                     P_RST_N;
-wire clk_hmc            = clk_user;
+//If transceiver models are used, clk_hmc should be sourced from the transceiver outclock and res_n hmc can be set independently
+wire clk_hmc            = clk_user;       
+wire res_n_hmc          = res_n;  
 
 // Wire the HMC BFM model
 wire            LxRXPS; // HMC input
@@ -96,7 +98,13 @@ assign serial_Txn = ~serial_Txp;
 
 //----------------------------- Attach the Register File System interface
 assign rfs_hmc_if.clk = clk_hmc;
-assign rfs_hmc_if.res_n = res_n;
+assign rfs_hmc_if.res_n = res_n_hmc;
+
+//Assign the AXI4 IF
+assign axi4_req.ACLK        = (`OPENHMC_ASYNC_FIFOS==0) ? clk_hmc : clk_user;
+assign axi4_rsp.ACLK        = (`OPENHMC_ASYNC_FIFOS==0) ? clk_hmc : clk_user;
+assign axi4_req.ARESET_N    = (`OPENHMC_ASYNC_FIFOS==0) ? res_n_hmc : res_n;
+assign axi4_rsp.ARESET_N    = (`OPENHMC_ASYNC_FIFOS==0) ? res_n_hmc : res_n;
 
 //----------------------------- Generate Clocks
 bit clk_10G;
@@ -108,6 +116,7 @@ generate
 endgenerate
 
 //----------------------------- Behavioral SerDes
+bit LxTXPS_synced;
 genvar lane;
 generate
     begin : serializers_gen
@@ -117,6 +126,7 @@ generate
                 .DWIDTH(LANE_WIDTH)
             ) serializer_I (
                 .clk(clk_hmc),
+                .res_n(res_n),
                 .fast_clk(clk_10G),
                 .data_in(to_serializers[lane*LANE_WIDTH+LANE_WIDTH-1:lane*LANE_WIDTH]),
                 .data_out(serial_Txp[lane])
@@ -125,6 +135,7 @@ generate
                 .DWIDTH(LANE_WIDTH)
             ) deserializer_I (
                 .clk(clk_hmc),
+                .res_n(LxTXPS_synced && res_n),
                 .fast_clk(clk_10G),
                 .bit_slip(bit_slip[lane]),
                 .lane_polarity(phy_lane_polarity[lane]),
@@ -134,7 +145,7 @@ generate
         end
     end
 endgenerate
-
+always @(posedge clk_hmc) LxTXPS_synced <= LxTXPS;
 //=====================================================================================================
 //-----------------------------------------------------------------------------------------------------
 //---------INSTANTIATIONS HERE-------------------------------------------------------------------------
@@ -145,11 +156,14 @@ openhmc_top #(
     .FPW(FPW),
     .LOG_NUM_LANES(LOG_NUM_LANES),
     //Configure the Functionality
-    .LOG_MAX_RTC(10),                //That is max 1023 Tokens
+    .LOG_MAX_RX_TOKENS(10),
+    .LOG_MAX_HMC_TOKENS(10),                //That is max 1023 Tokens
     .HMC_RX_AC_COUPLED(1),
-    .CTRL_LANE_POLARITY(0),
+    .CTRL_LANE_POLARITY(1),
     .CTRL_LANE_REVERSAL(1),
     .BITSLIP_SHIFT_RIGHT(1),
+    .OPEN_RSP_MODE(`OPEN_RSP_MODE),
+    .SYNC_AXI4_IF(`OPENHMC_ASYNC_FIFOS==0),
     //Debug Logic
     .DBG_RX_TOKEN_MON(1)    //Required by the test check sequence
  )
@@ -184,15 +198,17 @@ openhmc_instance
     .phy_data_tx_link2phy(to_serializers),
     .phy_data_rx_phy2link(from_deserializers),
     .phy_bit_slip(bit_slip),
-    .phy_ready(res_n),
+    .phy_tx_ready(res_n),
+    .phy_rx_ready(res_n),
     .phy_lane_polarity(phy_lane_polarity),
+    .phy_init_cont_set(),
 
     //----------------------------------
     //----Connect HMC
     //----------------------------------
     .P_RST_N(P_RST_N),
-    .hmc_LxRXPS(LxRXPS),
-    .hmc_LxTXPS(LxTXPS),
+    .LXRXPS(LxRXPS),
+    .LXTXPS(LxTXPS),
     .FERR_N(FERR_N),
 
     //----------------------------------

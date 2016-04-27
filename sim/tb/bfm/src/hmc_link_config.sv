@@ -48,26 +48,32 @@ class hmc_link_config extends uvm_object;
 
 	rand int 			hmc_tokens;
 	rand int 			rx_tokens;
+	rand bit [5:0]		bit_slip_time;
 	rand bit [2:0]  	cube_id;
 
 	rand bit 			cfg_tx_lane_reverse;
 	rand bit [15:0] 	cfg_hsstx_inv;
-	rand bit 			cfg_scram_enb;
-	rand bit [15:0]		cfg_tx_lane_delay[16]	= '{16{4'h0}};
+	bit 			cfg_scram_enb = 1;
+	rand bit [15:0]		cfg_tx_lane_delay[16];
 	rand bit [ 3:0]		cfg_retry_limit			= 3;	//-- LINKRETRY - infinite retry when cfg_retry_limit[3] == 1
 	rand bit [ 2:0]		cfg_retry_timeout		= 5;
 
 	rand bit			cfg_check_pkt			= 1;	//-- check for valid packet
 
 	bit 				cfg_lane_auto_correct 	= 1;
-	bit 				cfg_rsp_open_loop 		= 0;
-	int 				cfg_rx_clk_ratio 		= 40;
-	bit 				cfg_half_link_mode_rx 	= (2**`LOG_NUM_LANES==8);
+	uvm_active_passive_enum 				cfg_rsp_open_loop = UVM_PASSIVE;
+	bit 				cfg_half_link_mode_rx 	= (`LOG_NUM_LANES==3);
 	bit [7:0] 			cfg_tx_rl_lim 			= 85;
-	int 				cfg_tx_clk_ratio 		= 40;
-	bit 				cfg_half_link_mode_tx	= (2**`LOG_NUM_LANES==8);
-	bit [7:0]			cfg_init_retry_rxcnt 	= 16;
-	bit [7:0]			cfg_init_retry_txcnt 	= 6;	//-- Actual value in BFM is 4times this value
+	`ifdef HMC_12G
+	int 				cfg_rx_clk_ratio 		= 50;	//Set to 50 for 12.5Gbit , 60 for 15Gbit
+	int 				cfg_tx_clk_ratio 		= 50;	//Set to 50 for 12.5Gbit , 60 for 15Gbit
+	`else 
+	int 				cfg_rx_clk_ratio 		= 40;	//Set to 50 for 12.5Gbit , 60 for 15Gbit
+	int 				cfg_tx_clk_ratio 		= 40;	//Set to 50 for 12.5Gbit , 60 for 15Gbit
+	`endif
+	bit 				cfg_half_link_mode_tx	= (`LOG_NUM_LANES==3);
+	rand bit [7:0]		cfg_init_retry_rxcnt;
+	rand bit [7:0]		cfg_init_retry_txcnt;	//-- Actual value in BFM is 4times this value
 	realtime 			cfg_tsref				= 1us;
 	realtime 			cfg_top					= 1us;
 
@@ -82,9 +88,26 @@ class hmc_link_config extends uvm_object;
 //-- constrains
 //--
 
+	constraint cfg_init_retry_rxcnt_c {
+		cfg_init_retry_rxcnt == 16;
+		// cfg_init_retry_rxcnt <= 20;
+	}
+
+	constraint cfg_init_retry_txcnt_c {
+		//Actual Value is constraint*4
+		// cfg_init_retry_txcnt >= 5;	
+		cfg_init_retry_txcnt == 7;
+	}
+
+	constraint bit_slip_time_c {
+		bit_slip_time >= 32;
+		bit_slip_time <= 63;
+	}
+
 	constraint hmc_tokens_c {
 		hmc_tokens >= 25;
-		soft hmc_tokens dist{[25:30]:/5, [31:100]:/15, [101:1023]:/80}; 
+		// soft hmc_tokens dist{[25:30]:/5, [31:100]:/15, [101:1023]:/80}; 
+		soft hmc_tokens dist{[25:30]:/5, [31:219]:/95};	//Current hardware
 	}
 
 	constraint cfg_hsstx_inv_c {
@@ -93,7 +116,8 @@ class hmc_link_config extends uvm_object;
 
 	constraint rx_tokens_c {
 		rx_tokens >= 9;
-		soft rx_tokens dist{[9:30]:/5, [31:100]:/15, [101:1023]:/80}; 
+		// soft rx_tokens dist{[9:30]:/5, [31:100]:/15, [101:1023]:/80}; 	//Make sure to increase the input buffer accordingly 
+		soft rx_tokens dist{[9:30]:/5, [31:255]:/95};	//Safe value for input buffer address size = 8. Leave some FLITs for poisoned packets
 	}
 
 	constraint cube_id_c {
@@ -113,17 +137,15 @@ class hmc_link_config extends uvm_object;
 
 
 	constraint error_rates_c {
-		soft cfg_rsp_dln	== 5;
-		soft cfg_rsp_lng	== 5;
-		soft cfg_rsp_crc	== 5;
-		soft cfg_rsp_seq	== 5;
-		soft cfg_rsp_poison	== 5; 
-
-		soft cfg_req_dln 	== 5;
-		soft cfg_req_lng 	== 5;
-		soft cfg_req_crc 	== 5;
-		soft cfg_req_seq 	== 0; // Must be zero for BFM 28965 !
-
+		soft cfg_rsp_dln	==0;//dist{[0:10]};
+		soft cfg_rsp_lng	==0;//dist{[0:10]};
+		soft cfg_rsp_crc	==0;//dist{[0:10]};
+		soft cfg_rsp_seq	==0;//dist{[0:10]};
+		soft cfg_rsp_poison	==0;//dist{[0:10]}; 
+		soft cfg_req_dln 	==0;//dist{[0:10]};
+		soft cfg_req_lng 	==0;//dist{[0:10]};
+		soft cfg_req_crc 	==0;//dist{[0:10]};
+		soft cfg_req_seq 	==0; // Must be zero for BFM 28965 !
 
         (
         cfg_rsp_dln          ||
@@ -161,4 +183,4 @@ class hmc_link_config extends uvm_object;
 
 endclass : hmc_link_config
 
-`endif // AXI4_STREAM_CONFIG_SV
+`endif // HMC_LINK_CONFIG_SV

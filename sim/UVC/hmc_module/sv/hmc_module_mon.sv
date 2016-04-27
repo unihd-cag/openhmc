@@ -51,7 +51,6 @@ class hmc_module_mon extends uvm_monitor;
 			bins pkt_length[] = {[1:9]};
 		}
 		HMC_COMMAND: coverpoint packet.command {
-			//bins request_commands[] =
 			bins requests[] = {
 				HMC_WRITE_16,
 				HMC_WRITE_32,
@@ -121,7 +120,7 @@ class hmc_module_mon extends uvm_monitor;
 		super.new(name, parent);
 		item_collected_port = new("item_collected_port", this);
 	endfunction : new
-	
+
 
 	function void build_phase(uvm_phase phase);
 		super.build_phase(phase);

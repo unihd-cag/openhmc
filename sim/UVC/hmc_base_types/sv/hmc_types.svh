@@ -102,6 +102,7 @@ typedef enum bit [5:0] {
 
 typedef enum {
 	RESET,
+	POWER_DOWN,
 	INIT,
 	PRBS,
 	NULL_FLITS,
@@ -112,7 +113,6 @@ typedef enum {
 	START_RETRY_INIT,
 	CLEAR_RETRY,
 	SEND_RETRY_PACKETS
-
 } init_state_t;
 
 `endif // HMC_TYPES_SVH

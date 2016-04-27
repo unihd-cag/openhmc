@@ -64,14 +64,14 @@ class hmc_tb #( parameter AXI4_DATA_BYTES=`AXI4BYTES, parameter AXI4_TUSER_WIDTH
 	hmc_link_config link_cfg;
 
 	cag_rgm_rfs_env #(
-		.ADDR_WIDTH(`RFS_HMC_CONTROLLER_RF_AWIDTH),
-		.READ_DATA_WIDTH(`RFS_HMC_CONTROLLER_RF_RWIDTH),
-		.WRITE_DATA_WIDTH(`RFS_HMC_CONTROLLER_RF_WWIDTH)
+		.ADDR_WIDTH(`RFS_OPENHMC_RF_AWIDTH),
+		.READ_DATA_WIDTH(`RFS_OPENHMC_RF_RWIDTH),
+		.WRITE_DATA_WIDTH(`RFS_OPENHMC_RF_WWIDTH)
 	) rfs_hmc_I;
 
-	rf_hmc_controller_rf_c rf_model_hmc;
+	rf_openhmc_rf_c rf_model_hmc;
 
-	hmc_vseqr v_seqr;
+	vseqr v_seqr;
 
 	int i = 2;
 
@@ -143,10 +143,10 @@ class hmc_tb #( parameter AXI4_DATA_BYTES=`AXI4BYTES, parameter AXI4_TUSER_WIDTH
 
 		hmc_module = hmc_module_env::type_id::create("hmc_module",this);
 
-		rfs_hmc_I = cag_rgm_rfs_env #(.ADDR_WIDTH(`RFS_HMC_CONTROLLER_RF_AWIDTH), .READ_DATA_WIDTH(`RFS_HMC_CONTROLLER_RF_RWIDTH),.WRITE_DATA_WIDTH(`RFS_HMC_CONTROLLER_RF_WWIDTH))::type_id::create("rfs_hmc_I", this);
-		rf_model_hmc = rf_hmc_controller_rf_c::type_id::create("rf_model_hmc",this);
+		rfs_hmc_I = cag_rgm_rfs_env #(.ADDR_WIDTH(`RFS_OPENHMC_RF_AWIDTH), .READ_DATA_WIDTH(`RFS_OPENHMC_RF_RWIDTH),.WRITE_DATA_WIDTH(`RFS_OPENHMC_RF_WWIDTH))::type_id::create("rfs_hmc_I", this);
+		rf_model_hmc = rf_openhmc_rf_c::type_id::create("rf_model_hmc",this);
 
-		v_seqr = hmc_vseqr::type_id::create("v_seqr", this);
+		v_seqr = vseqr::type_id::create("v_seqr", this);
 
 	endfunction : build_phase
 
@@ -199,6 +199,8 @@ class hmc_tb #( parameter AXI4_DATA_BYTES=`AXI4BYTES, parameter AXI4_TUSER_WIDTH
 		v_seqr.axi4_req_seqr = axi4_req_seqr;
 		v_seqr.rf_seqr_hmc   = rfs_hmc_I.sequencer;
 		
+		
+		v_seqr.scb = hmc_module.scb;
 		
 	endfunction : connect_phase
 

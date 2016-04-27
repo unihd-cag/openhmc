@@ -62,13 +62,12 @@ module tb_top ();
 
 	`include "hmc_packet.sv"
 	`include "hmc_req_packet.sv"
-	//`include "hmc_req_posted_packet.sv"
 	`include "hmc_2_axi4_sequencer.sv"
 	`include "hmc_2_axi4_sequence.sv"
 	`include "tag_handler.sv"
 	
 	`include "hmc_link_config.sv"
-	`include "hmc_vseqr.sv"
+	`include "vseqr.sv"
 	
 	`include "axi4_stream_hmc_monitor.sv"
 	`include "bfm_2_hmc_monitor.sv"
@@ -83,23 +82,17 @@ module tb_top ();
 	axi4_stream_if #(
 		.DATA_BYTES(`AXI4BYTES),
 		.TUSER_WIDTH(`AXI4BYTES)
-		) axi4_hmc_req_if(
-			.ACLK(clk_user),
-			.ARESET_N(res_n)
-			);
+		) axi4_hmc_req_if();
 
 	axi4_stream_if #(
 		.DATA_BYTES(`AXI4BYTES),
 		.TUSER_WIDTH(`AXI4BYTES)
-		) axi4_hmc_rsp_if(
-			.ACLK(clk_user),
-			.ARESET_N(res_n)
-			);
+		) axi4_hmc_rsp_if();
 
 	cag_rgm_rfs_if #(
-		.ADDR_WIDTH(`RFS_HMC_CONTROLLER_RF_AWIDTH),
-		.READ_DATA_WIDTH(`RFS_HMC_CONTROLLER_RF_RWIDTH),
-		.WRITE_DATA_WIDTH(`RFS_HMC_CONTROLLER_RF_WWIDTH)
+		.ADDR_WIDTH(`RFS_OPENHMC_RF_AWIDTH),
+		.READ_DATA_WIDTH(`RFS_OPENHMC_RF_RWIDTH),
+		.WRITE_DATA_WIDTH(`RFS_OPENHMC_RF_WWIDTH)
 	) rfs_hmc_if();
 
 	dut dut_I (
@@ -122,9 +115,6 @@ module tb_top ();
 		uvm_config_db#(pkt_analysis_port#())::set(null,"uvm_test_top.hmc_tb0.hmc_module.hmc_req_mon","mb_pkt",dut_I.hmc_bfm0.hmc_flit_top.mb_rsp_pkt[0]);
 		uvm_config_db#(pkt_analysis_port#())::set(null,"uvm_test_top.hmc_tb0.hmc_module.hmc_rsp_mon","mb_pkt",dut_I.hmc_bfm0.hmc_flit_top.mb_req_pkt[0]);
 		
-		//uvm_config_db#(pkt_analysis_port#())::set(null,"uvm_test_top.hmc_tb0.hmc_module.hmc_req_mon","mb_pkt",dut_I.hmc_bfm0.hmc_flit_top.mb_req_pkt_err_cov[0]);
-		//uvm_config_db#(pkt_analysis_port#())::set(null,"uvm_test_top.hmc_tb0.hmc_module.hmc_rsp_mon","mb_pkt",dut_I.hmc_bfm0.hmc_flit_top.mb_rsp_pkt_err_cov[0]);
-		
 		run_test();
 	end
 
@@ -132,7 +122,7 @@ module tb_top ();
 		clk_user		<= 1'b1;
 		clk_hmc_refclk  <= 1'b1;
 		res_n			<= 1'b0;
-		#1000ns 
+		#500ns;
 		@(posedge clk_user) res_n	<= 1'b1;
 	end
 
@@ -167,7 +157,7 @@ module tb_top ();
             endcase
 	end
 
-	//-- 125 MHz
+	//-- 125 MHz HMC/Transceiver refclock
 	always #4ns clk_hmc_refclk <= ~clk_hmc_refclk;
-
+	
 endmodule : tb_top

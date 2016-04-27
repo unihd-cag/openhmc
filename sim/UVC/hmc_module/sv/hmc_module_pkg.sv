@@ -51,8 +51,6 @@ package hmc_module_pkg;
 	
 	`include "hmc_module_scb.sv"
 	`include "hmc_module_mon.sv"
-	
-	//`include "hmc_module_cfg.sv"
 	`include "hmc_module_env.sv"
 	
 endpackage : hmc_module_pkg

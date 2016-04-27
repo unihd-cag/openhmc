@@ -51,22 +51,20 @@ class hmc_module_scb  extends uvm_scoreboard;
 	protected int axi4_error_response_count = 0;
 	
 
-	
 
 	typedef hmc_packet hmc_request_queue[$];
 	typedef bit [127:0] flit_t;
 	hmc_request_queue axi4_np_requests[*];
 	hmc_packet axi4_2_hmc[$];
-	hmc_packet hmc_2_axi4[$];
-	hmc_packet hmc_2_axi4_axi4_came_first[$];
+	hmc_packet hmc_response[$];
+	hmc_packet axi4_response[$];
+	
 	
 	int valid_cycle = 0;
 	
 	//--check tags
 	int tag_count = 512;
 	bit [512:0]used_tags;
-	
-
 	
 
 	//-- analysis imports
@@ -94,14 +92,14 @@ class hmc_module_scb  extends uvm_scoreboard;
 	endfunction : new
 
 	//-- compare the received response packets and check with the previous sent request packet
-	function void hmc_2_axi4_compare(input hmc_packet expected, input hmc_packet packet);
+	function void response_compare(input hmc_packet expected, input hmc_packet packet);
 		int i;
 		hmc_packet request;
 		
 		if (packet.command != HMC_ERROR_RESPONSE) begin //-- HMC_ERROR_RESPONSE has no label
 			//-- Check the packet against the request stored in the axi4_np_requests map
 			label : assert (axi4_np_requests.exists(packet.tag))
-				else `uvm_fatal(get_type_name(),$psprintf("hmc_2_axi4_compare: Unexpected Response with tag %0x \n%s", packet.tag, packet.sprint()));
+				else `uvm_fatal(get_type_name(),$psprintf("response_compare: Unexpected Response with tag %0x \n%s", packet.tag, packet.sprint()));
 			
 			//-- delete the previous sent request packet
 			request = axi4_np_requests[packet.tag].pop_front();
@@ -112,10 +110,10 @@ class hmc_module_scb  extends uvm_scoreboard;
 		if (packet.command == HMC_WRITE_RESPONSE 
 				&& request.get_command_type() != HMC_WRITE_TYPE 
 				&& request.get_command_type() != HMC_MISC_WRITE_TYPE)
-			`uvm_fatal(get_type_name(),$psprintf("hmc_2_axi4_compare: Write Response received with tag %0x for request %s\n%s", packet.tag, request.command.name(), packet.sprint()))
+			`uvm_fatal(get_type_name(),$psprintf("response_compare: Write Response received with tag %0x for request %s\n%s", packet.tag, request.command.name(), packet.sprint()))
 
 		if (packet.command == HMC_READ_RESPONSE && request.get_command_type() != HMC_READ_TYPE && request.get_command_type() != HMC_MODE_READ_TYPE )
-			`uvm_fatal(get_type_name(),$psprintf("hmc_2_axi4_compare: Read Response received with tag %0x for request %s\n%s", packet.tag, request.command.name(), packet.sprint()))
+			`uvm_fatal(get_type_name(),$psprintf("response_compare: Read Response received with tag %0x for request %s\n%s", packet.tag, request.command.name(), packet.sprint()))
 
 		if (packet.command == HMC_READ_RESPONSE) begin
 			int expected_count;
@@ -132,70 +130,70 @@ class hmc_module_scb  extends uvm_scoreboard;
 				default:      expected_count = 0;
 			endcase
 			if (expected_count != packet.payload.size())
-				`uvm_fatal(get_type_name(),$psprintf("hmc_2_axi4_compare: Read Response received with tag %0x and wrong size req=%0s rsp payload size=%0x\n", packet.tag, request.command.name(), packet.payload.size()))
+				`uvm_fatal(get_type_name(),$psprintf("response_compare: Read Response received with tag %0x and wrong size req=%0s rsp payload size=%0x\n", packet.tag, request.command.name(), packet.payload.size()))
 		end
 
 		//-- Check that the HMC command matches the HTOC item
 		if (packet.get_command_type() != HMC_RESPONSE_TYPE)
-			`uvm_fatal(get_type_name(),$psprintf("hmc_2_axi4_compare: Unexpected Packet \n%s", packet.sprint()))
+			`uvm_fatal(get_type_name(),$psprintf("response_compare: Unexpected Packet \n%s", packet.sprint()))
 
 		if (expected.command != packet.command)
-			`uvm_fatal(get_type_name(),$psprintf("hmc_2_axi4_compare: Expected %s, got %s", expected.command.name(), packet.command.name()))
+			`uvm_fatal(get_type_name(),$psprintf("response_compare: Expected %s, got %s", expected.command.name(), packet.command.name()))
 
 		if (expected.tag != packet.tag) begin
-			`uvm_info(get_type_name(), $psprintf("Expected: %s. got: %s", expected.sprint(), packet.sprint() ), UVM_NONE)	
-			`uvm_fatal(get_type_name(),$psprintf("hmc_2_axi4_compare: Packet tag mismatch %0d != %0d ", expected.tag, packet.tag))
+			`uvm_info(get_type_name(), $psprintf("Expected: %s. got: %s", expected.sprint(), packet.sprint() ), UVM_LOW)	
+			`uvm_fatal(get_type_name(),$psprintf("response_compare: Packet tag mismatch %0d != %0d ", expected.tag, packet.tag))
 		end	
 
 		if (expected.packet_length != packet.packet_length) begin
-			`uvm_info(get_type_name(), $psprintf("Expected: %s. got: %s", expected.sprint(), packet.sprint() ), UVM_NONE)	
-			`uvm_fatal(get_type_name(),$psprintf("hmc_2_axi4_compare: Packet length mismatch %0d != %0d ", expected.packet_length, packet.packet_length))
+			`uvm_info(get_type_name(), $psprintf("Expected: %s. got: %s", expected.sprint(), packet.sprint() ), UVM_LOW)	
+			`uvm_fatal(get_type_name(),$psprintf("response_compare: Packet length mismatch %0d != %0d ", expected.packet_length, packet.packet_length))
 		end
 		
 		if (expected.payload.size() != packet.payload.size())
-			`uvm_fatal(get_type_name(),$psprintf("hmc_2_axi4_compare: Payload size mismatch %0d != %0d", expected.payload.size(), packet.payload.size()))
+			`uvm_fatal(get_type_name(),$psprintf("response_compare: Payload size mismatch %0d != %0d", expected.payload.size(), packet.payload.size()))
 
 		for (int i=0; i<packet.payload.size(); i++) begin
 			if (packet.payload[i] != expected.payload[i])
-				`uvm_fatal(get_type_name(),$psprintf("hmc_2_axi4_compare: Payload mismatch at %0d %0x != %0x", i, packet.payload[i], expected.payload[i]))
+				`uvm_fatal(get_type_name(),$psprintf("response_compare: Payload mismatch at %0d %0x != %0x", i, packet.payload[i], expected.payload[i]))
 		end
 
-	endfunction : hmc_2_axi4_compare
+	endfunction : response_compare
 
 	//-- compare and check 2 Request type packets
-	function void axi4_2_hmc_compare(input hmc_packet expected, hmc_packet packet);
+	function void request_compare(input hmc_packet expected, hmc_packet packet);
 
 		hmc_command_type packet_type = packet.get_command_type();
 		if (packet_type == HMC_FLOW_TYPE || packet_type == HMC_RESPONSE_TYPE)
-			`uvm_fatal(get_type_name(),$psprintf("axi4_2_hmc_compare: Unexpected Packet \n%s", packet.sprint()))
+			`uvm_fatal(get_type_name(),$psprintf("request_compare: Unexpected Packet \n%s", packet.sprint()))
 
 		if (expected.command != packet.command) begin
-			`uvm_info(get_type_name(), $psprintf("Expected: %s. got: %s", expected.sprint(), packet.sprint() ), UVM_NONE)	
-			`uvm_fatal(get_type_name(),$psprintf("axi4_2_hmc_compare: Expected %s, got %s", expected.command.name(), packet.command.name()))
+			`uvm_info(get_type_name(), $psprintf("Expected: %s. got: %s", expected.sprint(), packet.sprint() ), UVM_LOW)	
+			`uvm_fatal(get_type_name(),$psprintf("request_compare: Expected %s, got %s", expected.command.name(), packet.command.name()))
 		end
 
 		if (expected.cube_ID != packet.cube_ID)
-			`uvm_fatal(get_type_name(),$psprintf("axi4_2_hmc_compare: cube_ID mismatch %0d != %0d", expected.cube_ID, packet.cube_ID))
+			`uvm_fatal(get_type_name(),$psprintf("request_compare: cube_ID mismatch %0d != %0d", expected.cube_ID, packet.cube_ID))
 
 		if (expected.address != packet.address)
-			`uvm_fatal(get_type_name(),$psprintf("axi4_2_hmc_compare: Address mismatch %0d != %0d", expected.address, packet.address))
+			`uvm_fatal(get_type_name(),$psprintf("request_compare: Address mismatch %0d != %0d", expected.address, packet.address))
 
 		if (expected.packet_length != packet.packet_length)
-			`uvm_fatal(get_type_name(),$psprintf("axi4_2_hmc_compare: Packet length mismatch %0d != %0d", expected.packet_length, packet.packet_length))
+			`uvm_fatal(get_type_name(),$psprintf("request_compare: Packet length mismatch %0d != %0d", expected.packet_length, packet.packet_length))
 
 		if (expected.tag != packet.tag) begin
-			`uvm_info(get_type_name(), $psprintf("Expected: %s. got: %s", expected.sprint(), packet.sprint() ), UVM_NONE)	
-			`uvm_fatal(get_type_name(),$psprintf("axi4_2_hmc_compare: Packet tag mismatch %0d != %0d ", expected.tag, packet.tag))
+			`uvm_info(get_type_name(), $psprintf("Expected: %s. got: %s", expected.sprint(), packet.sprint() ), UVM_LOW)	
+			`uvm_fatal(get_type_name(),$psprintf("request_compare: Packet tag mismatch %0d != %0d ", expected.tag, packet.tag))
 		end	
 		
 		if (expected.payload.size() != packet.payload.size())
-			`uvm_fatal(get_type_name(),$psprintf("axi4_2_hmc_compare: Payload size mismatch %0d != %0d", expected.payload.size(), packet.payload.size()))
+			`uvm_fatal(get_type_name(),$psprintf("request_compare: Payload size mismatch %0d != %0d", expected.payload.size(), packet.payload.size()))
 
 		for (int i=0;i<expected.payload.size();i = i+1) begin
 			if (expected.payload[i] != packet.payload[i])
-				`uvm_fatal(get_type_name(),$psprintf("axi4_2_hmc_compare: Payload mismatch at %0d %0x != %0x", i, expected.payload[i], packet.payload[i]))
+				`uvm_fatal(get_type_name(),$psprintf("request_compare: Payload mismatch at %0d %0x != %0x", i, expected.payload[i], packet.payload[i]))
 		end
-	endfunction : axi4_2_hmc_compare
+	endfunction : request_compare
 
 	function void write_hmc_rsp(input hmc_packet packet);
 		hmc_packet expected;
@@ -211,7 +209,24 @@ class hmc_module_scb  extends uvm_scoreboard;
 		end
 
 		//-- check this packet later 
-		hmc_2_axi4.push_back(packet);
+		
+		//-- the response packet might be delayed due to the packet mon
+		//-- check if the response packet is already received on the axi link
+		if (axi4_response.size() == 0)
+			hmc_response.push_back(packet);
+		else begin //-- check the packet
+			expected = axi4_response.pop_front();
+			response_compare(expected, packet); //TODO
+
+			if (packet.command != HMC_ERROR_RESPONSE) begin //TODO cover error response
+								//-- check if open request with tag is available
+				if (used_tags[packet.tag] == 1'b1) begin
+					used_tags[packet.tag] =  1'b0;
+				end else begin
+					`uvm_fatal(get_type_name(),$psprintf("Packet with Tag %0d was not requested", packet.tag))
+				end
+			end
+		end
 	endfunction : write_hmc_rsp
 
 	function void write_hmc_req(input hmc_packet packet);
@@ -233,7 +248,7 @@ class hmc_module_scb  extends uvm_scoreboard;
 			expected = axi4_2_hmc.pop_front();
 
 		//-- compare and check 2 Request type packets
-		axi4_2_hmc_compare(expected, packet);
+		request_compare(expected, packet);
 
 		`uvm_info(get_type_name(),$psprintf("hmc_req: checked packet #%0d %s@%0x", hmc_req_packet_count, packet.command.name(), packet.address), UVM_MEDIUM)
 	endfunction : write_hmc_req
@@ -245,25 +260,36 @@ class hmc_module_scb  extends uvm_scoreboard;
 		 if (packet == null) begin
 		  `uvm_fatal(get_type_name(), $psprintf("packet is null"))
 		 end
-
-		//-- compare with previous on the HMC side received response packet
-		expected = hmc_2_axi4.pop_front();
-		hmc_2_axi4_compare(expected, packet);
-		if (packet.command != HMC_ERROR_RESPONSE) begin //TODO cover error response
+		 
+		 if (packet.command != HMC_ERROR_RESPONSE) begin //TODO cover error response
 			axi4_rsp_packet_count++;
-
 			`uvm_info(get_type_name(),$psprintf("axi4_rsp: received packet #%0d %s", axi4_rsp_packet_count, packet.command.name()), UVM_MEDIUM)
 			`uvm_info(get_type_name(),$psprintf("axi4_rsp: \n%s", packet.sprint()), UVM_HIGH)
-			//-- check if open request with tag is available
-			if (used_tags[packet.tag] == 1'b1) begin
-				used_tags[packet.tag] =  1'b0;
-			end else begin
-				`uvm_fatal(get_type_name(),$psprintf("Packet with Tag %0d was not requested", packet.tag))
-			end
 		end else begin
 			axi4_error_response_count++;
 			`uvm_info(get_type_name(),$psprintf("axi4_error_rsp: received error response #%0d %s", axi4_error_response_count, packet.command.name()), UVM_MEDIUM)
 			`uvm_info(get_type_name(),$psprintf("axi4_error_rsp: \n%s", packet.sprint()), UVM_HIGH)
+		end
+
+		//-- the response packet might be delayed due to the transmission mon. 
+		//-- due to this the compare must be executed later
+		
+		//-- compare with previous on the HMC side received response packet
+		
+		if (hmc_response.size()== 0) 
+			axi4_response.push_back(packet);
+		else begin //-- check
+			expected = hmc_response.pop_front();
+			response_compare(expected, packet); //TODO
+
+			if (packet.command != HMC_ERROR_RESPONSE) begin //TODO cover error response
+				//-- check if open request with tag is available
+				if (used_tags[packet.tag] == 1'b1) begin
+					used_tags[packet.tag] =  1'b0;
+				end else begin
+					`uvm_fatal(get_type_name(),$psprintf("Packet with Tag %0d was not requested", packet.tag))
+				end
+			end
 		end
 	endfunction :write_axi4_hmc_rsp
 
@@ -305,9 +331,6 @@ class hmc_module_scb  extends uvm_scoreboard;
 		`uvm_info(get_type_name(),$psprintf("axi4_req: received packet #%0d %s@%0x", axi4_req_packet_count, packet.command.name(), packet.address), UVM_MEDIUM)
 		`uvm_info(get_type_name(),$psprintf("axi4_req: \n%s", packet.sprint()), UVM_HIGH)
 			
-			
-			
-			
 	endfunction :write_axi4_hmc_req
 	
 	function void check_phase(uvm_phase phase);
@@ -321,7 +344,7 @@ class hmc_module_scb  extends uvm_scoreboard;
 		if (axi4_np_requests.size() > 0) begin
 			for(int i=0;i<512;i++)begin
 				if (axi4_np_requests.exists(i))begin
-					`uvm_info(get_type_name(),$psprintf("Unanswered Requests: %0d with tag %0d", axi4_np_requests[i].size(), i), UVM_NONE)
+					`uvm_info(get_type_name(),$psprintf("Unanswered Requests: %0d with tag %0d", axi4_np_requests[i].size(), i), UVM_LOW)
 				end
 			end
 			`uvm_fatal(get_type_name(),$psprintf("axi4_np_requests.size() = %0d, not all requests have been answered!", axi4_np_requests.size()))
@@ -331,18 +354,18 @@ class hmc_module_scb  extends uvm_scoreboard;
 		if (used_tags >0) begin
 			foreach(used_tags[i]) begin
 				if (used_tags[i] == 1'b1)
-					`uvm_info(get_type_name(),$psprintf("Tag %0d is in use",  i), UVM_NONE)
+					`uvm_info(get_type_name(),$psprintf("Tag %0d is in use",  i), UVM_LOW)
 			end
 			`uvm_fatal(get_type_name(),$psprintf("Open Tags!"))
 		end
 	endfunction : check_phase
 
 	function void report_phase(uvm_phase phase);
-		`uvm_info(get_type_name(),$psprintf("axi4_req_count %0d", axi4_req_packet_count), UVM_NONE)
-		`uvm_info(get_type_name(),$psprintf("axi4_rsp_count %0d", axi4_rsp_packet_count), UVM_NONE)
-		`uvm_info(get_type_name(),$psprintf("hmc_req_count %0d",  hmc_req_packet_count),  UVM_NONE)
-		`uvm_info(get_type_name(),$psprintf("hmc_rsp_count %0d",  hmc_rsp_packet_count),  UVM_NONE)
-		`uvm_info(get_type_name(),$psprintf("Error response count %0d", axi4_error_response_count ),  UVM_NONE)
+		`uvm_info(get_type_name(),$psprintf("axi4_req_count %0d", axi4_req_packet_count), UVM_LOW)
+		`uvm_info(get_type_name(),$psprintf("axi4_rsp_count %0d", axi4_rsp_packet_count), UVM_LOW)
+		`uvm_info(get_type_name(),$psprintf("hmc_req_count %0d",  hmc_req_packet_count),  UVM_LOW)
+		`uvm_info(get_type_name(),$psprintf("hmc_rsp_count %0d",  hmc_rsp_packet_count),  UVM_LOW)
+		`uvm_info(get_type_name(),$psprintf("Error response count %0d", axi4_error_response_count ),  UVM_LOW)
 	endfunction : report_phase
 
 endclass : hmc_module_scb

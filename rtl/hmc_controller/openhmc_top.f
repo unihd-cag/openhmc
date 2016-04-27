@@ -62,11 +62,14 @@ ${OPENHMC_PATH}/rtl/hmc_controller/crc/crc_128_init.v
 ${OPENHMC_PATH}/rtl/hmc_controller/crc/crc_accu.v
 
 ####Register File
-${OPENHMC_PATH}/rtl/hmc_controller/register_file/openhmc_8x_rf.v
-${OPENHMC_PATH}/rtl/hmc_controller/register_file/openhmc_16x_rf.v
+${OPENHMC_PATH}/rtl/hmc_controller/register_file/openhmc_rf.v
 
 ####Building blocks
 -f ${OPENHMC_PATH}/rtl/building_blocks/fifos/sync/openhmc_sync_fifos.f
 ${OPENHMC_PATH}/rtl/building_blocks/fifos/async/openhmc_async_fifo.v
-${OPENHMC_PATH}/rtl/building_blocks/counter/counter48.v
+${OPENHMC_PATH}/rtl/building_blocks/counter/openhmc_counter48.v
 ${OPENHMC_PATH}/rtl/building_blocks/rams/openhmc_ram.v
+
+
+####Include this if using XILINX
+#${OPENHMC_PATH}/rtl/building_blocks/counter/openhmc_counter48_wrapper_xilinx.v

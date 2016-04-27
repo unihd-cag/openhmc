@@ -47,7 +47,7 @@
 class axi4_stream_valid_cycle #(parameter DATA_BYTES = 16, parameter TUSER_WIDTH = 16) extends uvm_sequence_item;
 
 	rand bit [DATA_BYTES*8-1:0]	tdata;
-	rand bit [TUSER_WIDTH-1:0]		tuser;
+	rand bit [TUSER_WIDTH-1:0]	tuser;
 	rand int unsigned 			delay = 0;
 	
 	constraint c_packet_delay {
